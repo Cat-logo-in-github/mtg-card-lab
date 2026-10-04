@@ -1,21 +1,69 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const queryBox = document.getElementById("query");
-  const searchButton = document.getElementById("search");
-  const randomButton = document.getElementById("random");
-  const status = document.getElementById("status");
-  const results = document.getElementById("results");
-  const interpretation = document.getElementById("interpretation");
-  const modal = document.getElementById("modal");
-  const close = document.getElementById("close");
+  "use strict";
 
-  const API = "https://api.scryfall.com/cards/search?q=";
+  /*
+   * MTG CARD LAB
+   * ------------------------------------------------------------
+   * Natural-language MTG search without an API key.
+   *
+   * Pipeline:
+   *
+   *   natural language
+   *        ↓
+   *   interpretQuery()
+   *        ↓
+   *   retrieveCandidates()
+   *        ↓
+   *   inferCardConcepts()
+   *        ↓
+   *   scoreCard()
+   *        ↓
+   *   ranked results
+   *
+   * Scryfall does the heavy lifting for card retrieval.
+   * Everything after retrieval happens locally in the browser.
+   */
 
-  let cards = [];
+  const API = "https://api.scryfall.com";
 
-  if (!queryBox || !searchButton || !status || !results) {
-    console.error("Card Lab: required HTML elements are missing.");
+  // ------------------------------------------------------------
+  // DOM
+  // ------------------------------------------------------------
+
+  const queryInput =
+    document.getElementById("query") ||
+    document.getElementById("searchInput");
+
+  const searchButton =
+    document.getElementById("search") ||
+    document.getElementById("searchButton");
+
+  const randomButton =
+    document.getElementById("random");
+
+  const results =
+    document.getElementById("results");
+
+  const status =
+    document.getElementById("status");
+
+  const interpretation =
+    document.getElementById("interpretation");
+
+  const modal =
+    document.getElementById("modal");
+
+  const closeModal =
+    document.getElementById("close");
+
+  if (!queryInput || !searchButton || !results) {
+    console.error(
+      "MTG Card Lab: Could not find query/search/results elements."
+    );
     return;
   }
+
+  let currentCards = [];
 
 
   // ============================================================
@@ -24,8 +72,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   searchButton.addEventListener("click", runSearch);
 
-  queryBox.addEventListener("keydown", event => {
+  queryInput.addEventListener("keydown", event => {
     if (event.key === "Enter") {
+      event.preventDefault();
       runSearch();
     }
   });
@@ -35,45 +84,56 @@ document.addEventListener("DOMContentLoaded", () => {
     randomButton.addEventListener("click", () => {
 
       const examples = [
-        "red vampires similar to Sorin",
-        "cheap green creatures that make mana",
-        "blue cards that draw lots of cards",
         "black creatures that come back from the graveyard",
+        "blue cards that draw cards and counter spells",
+        "cards like Lightning Bolt but cheaper",
+        "red vampire creatures similar to Sorin",
+        "cheap green creatures that make mana",
         "white creatures that make tokens",
         "creatures with flying and lifelink",
-        "cards like Lightning Bolt but cheaper",
-        "cheap artifacts that generate value",
-        "commander cards for a sacrifice deck",
-        "red creatures that deal damage when they die",
-        "cards that exile graveyards",
-        "spells that counter creatures",
-        "green creatures with trample",
-        "cards that let me play extra lands"
+        "cards that sacrifice creatures for value",
+        "cards that destroy artifacts and enchantments",
+        "cards that let me play extra lands",
+        "cheap creatures that have haste",
+        "black cards that make opponents discard",
+        "cards that copy spells",
+        "graveyard cards for a commander deck",
+        "red cards that deal damage when creatures die"
       ];
 
-      queryBox.value =
-        examples[Math.floor(Math.random() * examples.length)];
+      queryInput.value =
+        examples[
+          Math.floor(Math.random() * examples.length)
+        ];
 
       runSearch();
     });
   }
 
 
-  document.querySelectorAll(".examples button").forEach(button => {
-    button.addEventListener("click", () => {
-      queryBox.value = button.dataset.query || "";
-      runSearch();
+  // Existing example buttons, if present.
+  document
+    .querySelectorAll("[data-query]")
+    .forEach(button => {
+
+      button.addEventListener("click", () => {
+
+        queryInput.value =
+          button.dataset.query || "";
+
+        runSearch();
+      });
     });
-  });
 
 
-  if (close && modal) {
+  if (closeModal && modal) {
 
-    close.addEventListener("click", () => {
+    closeModal.addEventListener("click", () => {
       modal.classList.add("hidden");
     });
 
     modal.addEventListener("click", event => {
+
       if (event.target === modal) {
         modal.classList.add("hidden");
       }
@@ -82,53 +142,49 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // ============================================================
-  // MAIN SEARCH PIPELINE
-  //
-  // 1. Understand language
-  // 2. Retrieve candidates
-  // 3. Resolve reference cards
-  // 4. Score candidates
-  // 5. Sort by score
+  // MAIN PIPELINE
   // ============================================================
 
   async function runSearch() {
 
-    const text = queryBox.value.trim();
+    const query =
+      queryInput.value.trim();
 
-    if (!text) {
-      queryBox.focus();
+    if (!query) {
+      queryInput.focus();
       return;
     }
 
-    const intent = interpret(text);
-
-    showInterpretation(intent);
-
-    status.textContent = "Understanding your request…";
     results.innerHTML = "";
+
+    setStatus("Understanding your query…");
+
+    const intent =
+      interpretQuery(query);
+
+    renderInterpretation(intent);
 
     try {
 
-      // Build a broad query.
-      // We intentionally avoid putting every semantic concept
-      // into Scryfall because that can make retrieval too narrow.
-      const retrievalQuery = buildRetrievalQuery(intent);
+      setStatus("Finding cards…");
 
-      status.textContent = "Finding candidate cards…";
+      const candidates =
+        await retrieveCandidates(
+          intent,
+          query
+        );
 
-      const cardsFound = await searchScryfall(
-        retrievalQuery
-      );
+      if (!candidates.length) {
 
-      if (!cardsFound.length) {
-
-        status.textContent = "No cards found.";
+        setStatus("No matching cards found.");
 
         results.innerHTML = `
           <div class="empty">
-            No cards matched the search.
-            <br><br>
-            Try a broader description.
+            <p>No cards found.</p>
+            <p>
+              Try describing the effect differently,
+              such as "creatures that return from the graveyard".
+            </p>
           </div>
         `;
 
@@ -136,19 +192,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
 
-      // --------------------------------------------------------
-      // Resolve references such as:
-      //
-      // "similar to Sorin"
-      // "like Lightning Bolt"
-      // --------------------------------------------------------
-
+      // Resolve reference cards such as "similar to Sorin".
       let references = [];
 
       if (intent.references.length) {
 
-        status.textContent =
-          "Comparing against reference cards…";
+        setStatus("Resolving reference cards…");
 
         references =
           await resolveReferences(
@@ -157,50 +206,58 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
 
-      // --------------------------------------------------------
-      // Score everything locally.
-      // --------------------------------------------------------
+      setStatus("Ranking cards…");
 
-      status.textContent =
-        "Ranking the best matches…";
 
-      cards = cardsFound
-        .map(card => {
+      currentCards =
+        candidates
+          .map(card => {
 
-          const score = scoreCard(
-            card,
-            intent,
-            references
+            const concepts =
+              inferCardConcepts(card);
+
+            const match =
+              scoreCard(
+                card,
+                concepts,
+                intent,
+                references
+              );
+
+            return {
+              ...card,
+              _concepts: concepts,
+              _match: match
+            };
+          })
+          .sort(
+            (a, b) =>
+              b._match.total -
+              a._match.total
           );
 
-          return {
-            ...card,
-            _match: score
-          };
-        })
-        .sort(
-          (a, b) =>
-            b._match.total -
-            a._match.total
-        );
 
+      setStatus(
+        `${currentCards.length.toLocaleString()} cards ranked`
+      );
 
-      status.textContent =
-        `${cards.length.toLocaleString()} candidates ranked`;
-
-      renderCards();
+      renderResults();
 
     } catch (error) {
 
-      console.error("Card Lab:", error);
+      console.error(
+        "MTG Card Lab search failed:",
+        error
+      );
 
-      status.textContent = "Search failed.";
+      setStatus("Search failed.");
 
       results.innerHTML = `
         <div class="empty">
-          Something went wrong while searching.
-          <br><br>
-          Please try again.
+          <p>Something went wrong.</p>
+          <p style="opacity:.65">
+            Check the browser console for details.
+          </p>
         </div>
       `;
     }
@@ -208,72 +265,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // ============================================================
-  // SCRYFALL
+  // SEMANTIC INTERPRETER
   // ============================================================
 
-  async function searchScryfall(q) {
+  function interpretQuery(input) {
 
-    const response = await fetch(
-      API + encodeURIComponent(q),
-      {
-        headers: {
-          "Accept": "application/json"
-        }
-      }
-    );
-
-    if (!response.ok) {
-
-      if (response.status === 404) {
-        return [];
-      }
-
-      throw new Error(
-        `Scryfall HTTP ${response.status}`
-      );
-    }
-
-    const data = await response.json();
-
-    return data.data || [];
-  }
-
-
-  // ============================================================
-  // INTENT
-  // ============================================================
-
-  function interpret(original) {
-
-    const q = normalize(original);
+    const text =
+      normalize(input);
 
     const intent = {
 
-      original_query: original,
+      original: input,
 
       colors: [],
 
-      type: null,
+      cardTypes: [],
 
       subtypes: [],
 
       supertypes: [],
-
-      mana_value: {
-        min: null,
-        max: null,
-        exact: null
-      },
-
-      power: {
-        min: null,
-        max: null
-      },
-
-      toughness: {
-        min: null,
-        max: null
-      },
 
       keywords: [],
 
@@ -285,153 +295,137 @@ document.addEventListener("DOMContentLoaded", () => {
 
       formats: [],
 
-      rarities: [],
-
-      sets: [],
-
       references: [],
 
       exclusions: [],
 
-      preferences: []
+      comparisons: [],
+
+      mana: {
+        min: null,
+        max: null,
+        exact: null
+      },
+
+      logic: "AND"
     };
 
 
-    parseColors(q, intent);
-    parseTypes(q, intent);
-    parseSubtypes(q, intent);
-    parseSupertypes(q, intent);
+    // ----------------------------------------------------------
+    // COLORS
+    // ----------------------------------------------------------
 
-    parseMana(q, intent);
-    parsePower(q, intent);
-    parseToughness(q, intent);
+    const colorAliases = {
 
-    parseKeywords(q, intent);
-    parseConcepts(q, intent);
-    parseZones(q, intent);
-    parseStrategies(q, intent);
-    parseFormats(q, intent);
-    parseRarity(q, intent);
-    parseSets(q, intent);
+      white: "W",
+      blue: "U",
+      black: "B",
+      red: "R",
+      green: "G",
+      colorless: "C",
 
-    parseReferences(original, intent);
+      azorius: ["W", "U"],
+      dimir: ["U", "B"],
+      rakdos: ["B", "R"],
+      gruul: ["R", "G"],
+      selesnya: ["G", "W"],
+      orzhov: ["W", "B"],
+      izzet: ["U", "R"],
+      golgari: ["B", "G"],
+      simic: ["G", "U"],
+      boros: ["R", "W"],
 
-    parseNegations(q, intent);
-    parsePreferences(q, intent);
+      bant: ["G", "W", "U"],
+      esper: ["W", "U", "B"],
+      grixis: ["U", "B", "R"],
+      jund: ["B", "R", "G"],
+      naya: ["R", "G", "W"],
 
-    return intent;
-  }
-
-
-  // ============================================================
-  // COLORS
-  // ============================================================
-
-  function parseColors(q, intent) {
-
-    const colors = {
-      white: "w",
-      blue: "u",
-      black: "b",
-      red: "r",
-      green: "g",
-      colorless: "c"
+      mardu: ["W", "B", "R"],
+      temur: ["U", "R", "G"],
+      abzan: ["W", "B", "G"],
+      jeskai: ["W", "U", "R"],
+      sultai: ["U", "B", "G"]
     };
 
-    for (const [name, code] of Object.entries(colors)) {
 
-      if (wordExists(q, name)) {
-        addUnique(intent.colors, code);
+    for (const [word, value] of Object.entries(
+      colorAliases
+    )) {
+
+      if (hasWord(text, word)) {
+
+        if (Array.isArray(value)) {
+
+          value.forEach(color =>
+            addUnique(
+              intent.colors,
+              color
+            )
+          );
+
+        } else {
+
+          addUnique(
+            intent.colors,
+            value
+          );
+        }
       }
     }
 
 
-    const identities = {
-      azorius: ["w", "u"],
-      dimir: ["u", "b"],
-      rakdos: ["b", "r"],
-      gruul: ["r", "g"],
-      selesnya: ["g", "w"],
-      orzhov: ["w", "b"],
-      izzet: ["u", "r"],
-      golgari: ["b", "g"],
-      simic: ["g", "u"],
-      boros: ["r", "w"],
+    // ----------------------------------------------------------
+    // CARD TYPES
+    // ----------------------------------------------------------
 
-      jeskai: ["w", "u", "r"],
-      sultai: ["u", "b", "g"],
-      mardu: ["w", "b", "r"],
-      temur: ["u", "r", "g"],
-      abzan: ["w", "b", "g"],
+    const typeAliases = {
 
-      bant: ["w", "u", "g"],
-      esper: ["w", "u", "b"],
-      grixis: ["u", "b", "r"],
-      naya: ["r", "g", "w"]
+      creatures: "creature",
+      creature: "creature",
+
+      artifacts: "artifact",
+      artifact: "artifact",
+
+      enchantments: "enchantment",
+      enchantment: "enchantment",
+
+      planeswalkers: "planeswalker",
+      planeswalker: "planeswalker",
+
+      instants: "instant",
+      instant: "instant",
+
+      sorceries: "sorcery",
+      sorcery: "sorcery",
+
+      lands: "land",
+      land: "land",
+
+      battles: "battle",
+      battle: "battle"
     };
 
 
-    for (const [name, value] of Object.entries(identities)) {
+    for (const [word, type] of Object.entries(
+      typeAliases
+    )) {
 
-      if (q.includes(name)) {
-        intent.colors = [...value];
+      if (hasWord(text, word)) {
+
+        addUnique(
+          intent.cardTypes,
+          type
+        );
       }
     }
 
 
-    const mono = q.match(
-      /\bmono[- ](white|blue|black|red|green)\b/
-    );
+    // ----------------------------------------------------------
+    // TRIBES / SUBTYPES
+    // ----------------------------------------------------------
 
-    if (mono) {
-
-      const map = {
-        white: "w",
-        blue: "u",
-        black: "b",
-        red: "r",
-        green: "g"
-      };
-
-      intent.colors = [map[mono[1]]];
-    }
-  }
-
-
-  // ============================================================
-  // TYPES
-  // ============================================================
-
-  function parseTypes(q, intent) {
-
-    const types = [
-      "creature",
-      "artifact",
-      "enchantment",
-      "planeswalker",
-      "instant",
-      "sorcery",
-      "land",
-      "battle"
-    ];
-
-    for (const type of types) {
-
-      if (wordExists(q, type)) {
-        intent.type = type;
-        break;
-      }
-    }
-  }
-
-
-  // ============================================================
-  // SUBTYPES
-  // ============================================================
-
-  function parseSubtypes(q, intent) {
-
-    const subtypes = [
+    const tribes = [
       "vampire",
       "wizard",
       "elf",
@@ -487,416 +481,515 @@ document.addEventListener("DOMContentLoaded", () => {
       "hydra"
     ];
 
-    for (const subtype of subtypes) {
 
-      if (wordExists(q, subtype)) {
+    for (const tribe of tribes) {
+
+      if (hasWord(text, tribe)) {
+
         addUnique(
           intent.subtypes,
-          subtype
+          tribe
         );
       }
     }
-  }
 
 
-  // ============================================================
-  // SUPERTYPES
-  // ============================================================
-
-  function parseSupertypes(q, intent) {
+    // ----------------------------------------------------------
+    // SUPERTYPES
+    // ----------------------------------------------------------
 
     [
       "legendary",
-      "snow",
       "basic",
-      "world"
+      "snow"
     ].forEach(value => {
 
-      if (wordExists(q, value)) {
+      if (hasWord(text, value)) {
+
         addUnique(
           intent.supertypes,
           value
         );
       }
     });
-  }
 
 
-  // ============================================================
-  // MANA
-  // ============================================================
+    // ----------------------------------------------------------
+    // KEYWORDS
+    // ----------------------------------------------------------
 
-  function parseMana(q, intent) {
+    const keywordAliases = {
 
-    if (
-      /\bcheap\b/.test(q) ||
-      /\blow[- ]cost\b/.test(q) ||
-      /\blow[- ]mana\b/.test(q)
-    ) {
-      intent.mana_value.max = 3;
-    }
-
-
-    if (
-      /\bexpensive\b/.test(q) ||
-      /\bhigh[- ]cost\b/.test(q)
-    ) {
-      intent.mana_value.min = 5;
-    }
-
-
-    let m = q.match(
-      /(?:mana value|mv)\s*(?:of|=|is)?\s*(\d+)/
-    );
-
-    if (m) {
-      intent.mana_value.exact =
-        Number(m[1]);
-    }
-
-
-    m = q.match(
-      /(?:under|below|less than|at most|up to)\s+(\d+)\s*(?:mana|mv|mana value)?/
-    );
-
-    if (m) {
-      intent.mana_value.max =
-        Number(m[1]);
-    }
-
-
-    m = q.match(
-      /(?:over|above|more than|at least)\s+(\d+)\s*(?:mana|mv|mana value)?/
-    );
-
-    if (m) {
-      intent.mana_value.min =
-        Number(m[1]);
-    }
-  }
+      "first strike": "first strike",
+      "double strike": "double strike",
+      flying: "flying",
+      haste: "haste",
+      trample: "trample",
+      deathtouch: "deathtouch",
+      lifelink: "lifelink",
+      menace: "menace",
+      vigilance: "vigilance",
+      flash: "flash",
+      defender: "defender",
+      hexproof: "hexproof",
+      indestructible: "indestructible",
+      ward: "ward",
+      prowess: "prowess",
+      reach: "reach",
+      toxic: "toxic",
+      infect: "infect",
+      cascade: "cascade",
+      convoke: "convoke",
+      delve: "delve",
+      cycling: "cycling",
+      kicker: "kicker",
+      madness: "madness",
+      morph: "morph",
+      scry: "scry",
+      surveil: "surveil",
+      investigate: "investigate",
+      connive: "connive",
+      proliferate: "proliferate",
+      landfall: "landfall",
+      devotion: "devotion",
+      mutate: "mutate",
+      escape: "escape",
+      flashback: "flashback",
+      foretell: "foretell",
+      incubate: "incubate"
+    };
 
 
-  // ============================================================
-  // POWER / TOUGHNESS
-  // ============================================================
+    for (const [phrase, keyword] of Object.entries(
+      keywordAliases
+    )) {
 
-  function parsePower(q, intent) {
+      if (text.includes(phrase)) {
 
-    let m = q.match(
-      /power\s*(?:at least|>=|over|above)\s*(\d+)/
-    );
-
-    if (m) {
-      intent.power.min = Number(m[1]);
-    }
-
-    m = q.match(
-      /power\s*(?:at most|<=|under|below)\s*(\d+)/
-    );
-
-    if (m) {
-      intent.power.max = Number(m[1]);
-    }
-  }
-
-
-  function parseToughness(q, intent) {
-
-    let m = q.match(
-      /toughness\s*(?:at least|>=|over|above)\s*(\d+)/
-    );
-
-    if (m) {
-      intent.toughness.min = Number(m[1]);
-    }
-
-    m = q.match(
-      /toughness\s*(?:at most|<=|under|below)\s*(\d+)/
-    );
-
-    if (m) {
-      intent.toughness.max = Number(m[1]);
-    }
-  }
-
-
-  // ============================================================
-  // KEYWORDS
-  // ============================================================
-
-  function parseKeywords(q, intent) {
-
-    const keywords = [
-      "flying",
-      "haste",
-      "trample",
-      "deathtouch",
-      "lifelink",
-      "menace",
-      "vigilance",
-      "flash",
-      "defender",
-      "hexproof",
-      "indestructible",
-      "ward",
-      "prowess",
-      "first strike",
-      "double strike",
-      "reach",
-      "infect",
-      "toxic",
-      "cascade",
-      "convoke",
-      "delve",
-      "affinity",
-      "cycling",
-      "kicker",
-      "madness",
-      "morph",
-      "scry",
-      "surveil",
-      "investigate",
-      "connive",
-      "proliferate",
-      "landfall",
-      "devotion",
-      "mutate",
-      "escape",
-      "flashback",
-      "foretell",
-      "incubate"
-    ];
-
-    for (const keyword of keywords) {
-
-      if (q.includes(keyword)) {
         addUnique(
           intent.keywords,
           keyword
         );
       }
     }
-  }
 
 
-  // ============================================================
-  // CONCEPTS
-  // ============================================================
+    // ----------------------------------------------------------
+    // SEMANTIC CONCEPTS
+    //
+    // Each concept has MANY natural-language expressions.
+    // ----------------------------------------------------------
 
-  function parseConcepts(q, intent) {
+    const conceptPatterns = {
 
-    const groups = {
-
-      draw: [
-        "draw cards",
+      card_draw: [
         "draw a card",
+        "draw cards",
+        "draw more",
         "card draw",
-        "draw more cards",
-        "cantrip"
+        "card advantage",
+        "cantrip",
+        "refill my hand",
+        "draw from your library"
       ],
 
-      mana: [
+      mana_ramp: [
+        "ramp",
         "make mana",
         "makes mana",
         "generate mana",
+        "generates mana",
+        "produce mana",
         "produces mana",
+        "mana acceleration",
         "mana dork",
         "mana dorks",
-        "ramp",
-        "mana acceleration"
+        "add mana"
+      ],
+
+      graveyard_recursion: [
+        "come back from the graveyard",
+        "comes back from the graveyard",
+        "return from the graveyard",
+        "returns from the graveyard",
+        "return it from the graveyard",
+        "bring it back from the graveyard",
+        "bring back from the graveyard",
+        "recur",
+        "recursion",
+        "recurring",
+        "reanimate",
+        "reanimation",
+        "return from your graveyard"
       ],
 
       sacrifice: [
         "sacrifice",
+        "sacrificing",
         "sac outlet",
-        "sacrifice outlet"
+        "sacrifice outlet",
+        "sacrifice creatures"
       ],
 
-      graveyard: [
-        "graveyard",
-        "reanimate",
-        "reanimation",
-        "return from the graveyard"
-      ],
-
-      removal: [
-        "removal",
+      creature_removal: [
+        "creature removal",
+        "remove creatures",
+        "kill creatures",
+        "kills creatures",
         "destroy creatures",
-        "destroy target",
-        "kill creatures"
+        "destroy target creature",
+        "destroy a creature",
+        "exile creatures",
+        "exile target creature"
       ],
 
-      exile: [
-        "exile",
-        "exile target"
+      artifact_removal: [
+        "destroy artifacts",
+        "destroy target artifact",
+        "artifact removal",
+        "remove artifacts"
       ],
 
-      damage: [
-        "damage",
+      enchantment_removal: [
+        "destroy enchantments",
+        "destroy target enchantment",
+        "enchantment removal",
+        "remove enchantments"
+      ],
+
+      direct_damage: [
         "deal damage",
-        "burn"
+        "deals damage",
+        "direct damage",
+        "burn",
+        "burn spells",
+        "damage to any target",
+        "damage to target",
+        "damage an opponent"
       ],
 
       discard: [
         "discard",
+        "discards",
+        "discard cards",
+        "discard a card",
+        "discard their hand",
         "hand disruption"
       ],
 
-      counter: [
+      counterspell: [
+        "counter spells",
+        "counter a spell",
+        "counter target spell",
         "counterspell",
-        "counter spell",
-        "counter magic"
+        "counter magic",
+        "countering spells"
       ],
 
-      tokens: [
+      token_generation: [
         "make tokens",
         "makes tokens",
         "create tokens",
+        "creates tokens",
         "token generation",
-        "token maker"
+        "token maker",
+        "token maker",
+        "go wide"
       ],
 
       lifegain: [
         "gain life",
+        "gains life",
         "life gain",
-        "lifegain"
+        "lifegain",
+        "gain a lot of life"
       ],
 
-      tutor: [
+      tutoring: [
         "tutor",
         "tutors",
-        "search your library"
+        "search your library",
+        "search the library",
+        "find a card from your library"
       ],
 
       mill: [
         "mill",
-        "mill cards"
+        "mills",
+        "mill cards",
+        "put cards from the top of the library into the graveyard"
       ],
 
       blink: [
         "blink",
         "flicker",
-        "exile and return"
+        "exile and return",
+        "exile it and return",
+        "exile a creature then return"
       ],
 
       copy: [
-        "copy spells",
         "copy a spell",
+        "copy spells",
         "copy creatures",
-        "clone"
+        "copy a creature",
+        "clone",
+        "copies another"
       ],
 
       counters: [
         "+1/+1 counters",
+        "plus one plus one counters",
         "plus one counters",
         "put counters",
-        "counters on creatures"
+        "puts counters",
+        "counter distribution"
       ],
 
-      extra_land: [
+      extra_lands: [
         "play extra lands",
+        "play additional lands",
         "extra land",
-        "additional land"
+        "additional land",
+        "play more lands"
       ],
 
-      pump: [
-        "pump",
+      creature_pump: [
+        "pump creatures",
         "buff creatures",
         "make creatures bigger",
+        "creatures get bigger",
+        "give creatures +",
         "anthem"
+      ],
+
+      life_loss: [
+        "lose life",
+        "loses life",
+        "life loss",
+        "drain life"
+      ],
+
+      theft: [
+        "steal a creature",
+        "gain control of",
+        "take control of",
+        "creature theft",
+        "steal creatures"
+      ],
+
+      combat: [
+        "combat",
+        "attack",
+        "attacking",
+        "attacks",
+        "block",
+        "blocking"
+      ],
+
+      cast_from_graveyard: [
+        "cast from the graveyard",
+        "cast cards from the graveyard",
+        "cast from your graveyard"
+      ],
+
+      cast_from_exile: [
+        "cast from exile",
+        "cast cards from exile"
+      ],
+
+      landfall: [
+        "landfall",
+        "whenever a land enters",
+        "when a land enters"
+      ],
+
+      death_trigger: [
+        "when it dies",
+        "when this creature dies",
+        "dies",
+        "death trigger",
+        "creature dies"
+      ],
+
+      enter_battlefield: [
+        "enters the battlefield",
+        "enter the battlefield",
+        "enters play",
+        "when this enters"
+      ],
+
+      cast_trigger: [
+        "when you cast",
+        "whenever you cast",
+        "cast trigger"
       ]
     };
 
 
-    for (const [concept, phrases] of Object.entries(groups)) {
+    for (
+      const [concept, patterns]
+      of Object.entries(conceptPatterns)
+    ) {
 
       if (
-        phrases.some(
-          phrase => q.includes(phrase)
+        patterns.some(
+          phrase => text.includes(phrase)
         )
       ) {
+
         addUnique(
           intent.concepts,
           concept
         );
       }
     }
-  }
 
 
-  // ============================================================
-  // ZONES
-  // ============================================================
+    // ----------------------------------------------------------
+    // ZONES
+    // ----------------------------------------------------------
 
-  function parseZones(q, intent) {
+    const zonePatterns = {
 
-    const zones = {
-      graveyard: ["graveyard", "gy"],
-      library: ["library", "deck"],
-      hand: ["hand"],
-      battlefield: ["battlefield"],
-      exile: ["exile", "exiled"],
-      stack: ["stack"]
+      graveyard: [
+        "graveyard",
+        "graveyards",
+        "from the graveyard"
+      ],
+
+      hand: [
+        "hand",
+        "from your hand"
+      ],
+
+      library: [
+        "library",
+        "deck"
+      ],
+
+      battlefield: [
+        "battlefield",
+        "in play"
+      ],
+
+      exile: [
+        "exile",
+        "exiled"
+      ],
+
+      stack: [
+        "stack"
+      ]
     };
 
-    for (const [zone, words] of Object.entries(zones)) {
+
+    for (
+      const [zone, patterns]
+      of Object.entries(zonePatterns)
+    ) {
 
       if (
-        words.some(word => wordExists(q, word))
+        patterns.some(
+          phrase => text.includes(phrase)
+        )
       ) {
+
         addUnique(
           intent.zones,
           zone
         );
       }
     }
-  }
 
 
-  // ============================================================
-  // STRATEGIES
-  // ============================================================
-
-  function parseStrategies(q, intent) {
+    // ----------------------------------------------------------
+    // STRATEGIES
+    // ----------------------------------------------------------
 
     const strategies = {
-      ramp: ["ramp"],
-      aggro: ["aggro", "aggressive", "beatdown"],
-      control: ["control deck"],
-      midrange: ["midrange"],
-      aristocrats: ["aristocrats"],
-      reanimator: ["reanimator"],
-      tokens: ["token deck", "go wide"],
-      spellslinger: ["spellslinger"],
-      voltron: ["voltron"],
-      tribal: ["tribal"],
-      artifacts: ["artifact deck"],
-      enchantments: ["enchantment deck", "enchantress"],
-      lifegain: ["lifegain deck", "life gain deck"]
+
+      aristocrats: [
+        "aristocrats",
+        "death trigger sacrifice deck",
+        "sacrifice deck"
+      ],
+
+      reanimator: [
+        "reanimator",
+        "reanimation deck"
+      ],
+
+      spellslinger: [
+        "spellslinger",
+        "spell deck"
+      ],
+
+      tokens: [
+        "token deck",
+        "go wide"
+      ],
+
+      voltron: [
+        "voltron"
+      ],
+
+      tribal: [
+        "tribal"
+      ],
+
+      aggro: [
+        "aggro",
+        "aggressive deck",
+        "beatdown"
+      ],
+
+      control: [
+        "control deck"
+      ],
+
+      midrange: [
+        "midrange deck"
+      ],
+
+      enchantress: [
+        "enchantress",
+        "enchantment deck"
+      ],
+
+      artifacts: [
+        "artifact deck"
+      ],
+
+      lifegain: [
+        "lifegain deck",
+        "life gain deck"
+      ]
     };
 
 
-    for (const [strategy, phrases] of Object.entries(strategies)) {
+    for (
+      const [strategy, patterns]
+      of Object.entries(strategies)
+    ) {
 
       if (
-        phrases.some(
-          phrase => q.includes(phrase)
+        patterns.some(
+          phrase => text.includes(phrase)
         )
       ) {
+
         addUnique(
           intent.strategies,
           strategy
         );
       }
     }
-  }
 
 
-  // ============================================================
-  // FORMATS
-  // ============================================================
-
-  function parseFormats(q, intent) {
+    // ----------------------------------------------------------
+    // FORMATS
+    // ----------------------------------------------------------
 
     const formats = [
       "commander",
@@ -909,14 +1002,14 @@ document.addEventListener("DOMContentLoaded", () => {
       "pauper",
       "historic",
       "timeless",
-      "alchemy",
-      "oathbreaker",
-      "brawl"
+      "brawl",
+      "oathbreaker"
     ];
 
-    for (const format of formats) {
 
-      if (wordExists(q, format)) {
+    formats.forEach(format => {
+
+      if (hasWord(text, format)) {
 
         addUnique(
           intent.formats,
@@ -925,177 +1018,214 @@ document.addEventListener("DOMContentLoaded", () => {
             : format
         );
       }
+    });
+
+
+    // ----------------------------------------------------------
+    // MANA
+    // ------------------------------------------------------------
+
+    parseManaIntent(text, intent);
+
+
+    // ----------------------------------------------------------
+    // REFERENCES
+    // ------------------------------------------------------------
+
+    parseReferences(input, intent);
+
+
+    // ----------------------------------------------------------
+    // COMPARISONS
+    // ------------------------------------------------------------
+
+    if (
+      /\bcheaper\b|\blower cost\b|\blower mana\b|\bless mana\b/.test(text)
+    ) {
+
+      addUnique(
+        intent.comparisons,
+        "lower_mana"
+      );
     }
-  }
 
 
-  // ============================================================
-  // RARITY
-  // ============================================================
+    if (
+      /\bmore expensive\b|\bhigher cost\b|\bmore mana\b/.test(text)
+    ) {
 
-  function parseRarity(q, intent) {
-
-    for (const rarity of [
-      "common",
-      "uncommon",
-      "rare",
-      "mythic"
-    ]) {
-
-      if (wordExists(q, rarity)) {
-
-        addUnique(
-          intent.rarities,
-          rarity
-        );
-      }
+      addUnique(
+        intent.comparisons,
+        "higher_mana"
+      );
     }
-  }
 
 
-  // ============================================================
-  // SETS
-  // ============================================================
+    // ----------------------------------------------------------
+    // EXCLUSIONS
+    // ----------------------------------------------------------
 
-  function parseSets(q, intent) {
-
-    const sets = {
-      "lord of the rings": "ltr",
-      "modern horizons 3": "mh3",
-      "modern horizons 2": "mh2",
-      "wilds of eldraine": "woe",
-      "lost caverns of ixalan": "lci",
-      "march of the machine": "mom",
-      "phyrexia all will be one": "one",
-      "dominaria united": "dmu",
-      "kamigawa neon dynasty": "neo",
-      "streets of new capenna": "snc",
-      "zendikar rising": "znr"
-    };
-
-
-    for (const [name, code] of Object.entries(sets)) {
-
-      if (q.includes(name)) {
-        addUnique(
-          intent.sets,
-          code
-        );
-      }
-    }
-  }
-
-
-  // ============================================================
-  // REFERENCES
-  // ============================================================
-
-  function parseReferences(original, intent) {
-
-    const patterns = [
-      /similar to\s+(.+?)(?:\s+but|\s+that|\s+which|$)/i,
-      /similar\s+to\s+(.+)$/i,
-      /like\s+(.+?)(?:\s+but|\s+that|\s+which|$)/i
+    const exclusionPatterns = [
+      /without\s+([a-z][a-z -]*)/gi,
+      /not\s+([a-z][a-z -]*)/gi,
+      /no\s+([a-z][a-z -]*)/gi
     ];
 
 
-    for (const pattern of patterns) {
+    for (
+      const pattern of exclusionPatterns
+    ) {
+
+      let match;
+
+      while (
+        (match = pattern.exec(input))
+      ) {
+
+        const value =
+          normalize(match[1])
+            .replace(
+              /\b(cards?|creatures?|spells?)\b/g,
+              ""
+            )
+            .trim();
+
+        if (value) {
+          addUnique(
+            intent.exclusions,
+            value
+          );
+        }
+      }
+    }
+
+
+    return intent;
+  }
+
+
+  // ============================================================
+  // MANA PARSER
+  // ============================================================
+
+  function parseManaIntent(text, intent) {
+
+    if (
+      /\bcheap\b/.test(text) ||
+      /\blow[- ]cost\b/.test(text) ||
+      /\befficient\b/.test(text)
+    ) {
+
+      intent.mana.max = 3;
+    }
+
+
+    if (
+      /\bexpensive\b/.test(text) ||
+      /\bhigh[- ]cost\b/.test(text)
+    ) {
+
+      intent.mana.min = 5;
+    }
+
+
+    let match =
+      text.match(
+        /(?:mana value|mv)\s*(?:of|is|=)?\s*(\d+)/
+      );
+
+    if (match) {
+
+      intent.mana.exact =
+        Number(match[1]);
+    }
+
+
+    match =
+      text.match(
+        /(?:under|below|less than|at most|up to)\s+(\d+)\s*(?:mana|mv|mana value)?/
+      );
+
+    if (match) {
+
+      intent.mana.max =
+        Number(match[1]);
+    }
+
+
+    match =
+      text.match(
+        /(?:over|above|more than|at least)\s+(\d+)\s*(?:mana|mv|mana value)?/
+      );
+
+    if (match) {
+
+      intent.mana.min =
+        Number(match[1]);
+    }
+  }
+
+
+  // ============================================================
+  // REFERENCE PARSER
+  // ============================================================
+
+  function parseReferences(input, intent) {
+
+    const patterns = [
+
+      /(?:similar to|similar with|like|resembling)\s+(.+?)(?:\s+but\s+|\s+that\s+|\s+which\s+|$)/i,
+
+      /(?:cards? similar to)\s+(.+)$/i,
+
+      /(?:cards? like)\s+(.+)$/i
+    ];
+
+
+    for (
+      const pattern of patterns
+    ) {
 
       const match =
-        original.match(pattern);
+        input.match(pattern);
 
       if (!match) continue;
 
-      const reference =
+
+      let reference =
         match[1]
           .replace(/[?.!,]+$/, "")
           .trim();
 
+
+      // Remove trailing natural-language comparison clauses.
+      reference =
+        reference
+          .replace(
+            /\s+(but cheaper|but stronger|but bigger|but faster)$/i,
+            ""
+          )
+          .trim();
+
+
       if (reference) {
 
-        addUnique(
-          intent.references,
-          reference
-        );
+        // Avoid accidentally treating the entire query as a
+        // reference when it clearly contains no card-like name.
+        const words =
+          reference.split(/\s+/);
 
-        break;
+        if (words.length <= 8) {
+
+          addUnique(
+            intent.references,
+            reference
+          );
+        }
       }
-    }
-  }
 
 
-  // ============================================================
-  // NEGATIONS
-  // ============================================================
-
-  function parseNegations(q, intent) {
-
-    const patterns = [
-      /not\s+([a-z]+)/g,
-      /without\s+([a-z]+)/g
-    ];
-
-
-    for (const pattern of patterns) {
-
-      let match;
-
-      while ((match = pattern.exec(q))) {
-
-        addUnique(
-          intent.exclusions,
-          match[1]
-        );
-      }
-    }
-  }
-
-
-  // ============================================================
-  // PREFERENCES
-  // ============================================================
-
-  function parsePreferences(q, intent) {
-
-    if (
-      q.includes("cheap") ||
-      q.includes("efficient")
-    ) {
-      addUnique(
-        intent.preferences,
-        "low_cost"
-      );
-    }
-
-    if (
-      q.includes("powerful") ||
-      q.includes("strong") ||
-      q.includes("best")
-    ) {
-      addUnique(
-        intent.preferences,
-        "power"
-      );
-    }
-
-    if (
-      q.includes("value") ||
-      q.includes("card advantage")
-    ) {
-      addUnique(
-        intent.preferences,
-        "value"
-      );
-    }
-
-    if (
-      q.includes("budget") ||
-      q.includes("cheap to buy")
-    ) {
-      addUnique(
-        intent.preferences,
-        "budget"
-      );
+      break;
     }
   }
 
@@ -1103,63 +1233,86 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   // RETRIEVAL
   //
-  // Retrieve broadly enough that local ranking can do its job.
+  // Important:
+  // We do NOT convert every semantic concept into o:"..."
+  // because that caused the previous version to produce
+  // brittle/invalid searches.
+  //
+  // Retrieval is deliberately broad.
+  // Ranking happens locally.
   // ============================================================
 
-  function buildRetrievalQuery(intent) {
+  async function retrieveCandidates(
+    intent,
+    originalQuery
+  ) {
 
-    const parts = [];
+    const queries = [];
+
+
+    // ----------------------------------------------------------
+    // Query 1: hard structural requirements
+    // ----------------------------------------------------------
+
+    const structural = [];
 
 
     if (intent.colors.length) {
 
-      parts.push(
+      // Scryfall's color filter accepts combinations.
+      structural.push(
         `c:${intent.colors.join("")}`
       );
     }
 
 
-    if (intent.type) {
+    if (intent.cardTypes.length) {
 
-      parts.push(
-        `t:${intent.type}`
+      // Multiple types are OR-ish possibilities for retrieval.
+      structural.push(
+        intent.cardTypes.length === 1
+          ? `t:${intent.cardTypes[0]}`
+          : `(${intent.cardTypes
+              .map(type => `t:${type}`)
+              .join(" OR ")})`
       );
     }
 
 
-    for (const subtype of intent.subtypes) {
+    if (intent.subtypes.length) {
 
-      parts.push(
-        `t:${subtype}`
-      );
+      for (
+        const subtype of intent.subtypes
+      ) {
+
+        structural.push(
+          `t:${subtype}`
+        );
+      }
     }
 
 
-    for (const supertype of intent.supertypes) {
+    if (
+      intent.mana.exact !== null
+    ) {
 
-      parts.push(
-        `is:${supertype}`
-      );
-    }
-
-
-    if (intent.mana_value.exact !== null) {
-
-      parts.push(
-        `mv:${intent.mana_value.exact}`
+      structural.push(
+        `mv:${intent.mana.exact}`
       );
 
     } else {
 
-      if (intent.mana_value.min !== null) {
-        parts.push(
-          `mv>=${intent.mana_value.min}`
+      if (intent.mana.min !== null) {
+
+        structural.push(
+          `mv>=${intent.mana.min}`
         );
       }
 
-      if (intent.mana_value.max !== null) {
-        parts.push(
-          `mv<=${intent.mana_value.max}`
+      if (intent.mana.max !== null) {
+
+        structural.push(
+          `mv<=${intent.mana.max}`
         );
       }
     }
@@ -1167,154 +1320,715 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (intent.formats.length) {
 
-      parts.push(
+      structural.push(
         `f:${intent.formats[0]}`
       );
     }
 
 
-    if (intent.rarities.length) {
+    if (structural.length) {
 
-      parts.push(
-        `r:${intent.rarities[0]}`
+      queries.push(
+        structural.join(" ")
       );
     }
 
 
-    if (intent.sets.length) {
+    // ----------------------------------------------------------
+    // Query 2: semantic text retrieval
+    //
+    // Scryfall handles natural language surprisingly well.
+    // Use the original query as a fallback candidate source.
+    // ----------------------------------------------------------
 
-      parts.push(
-        `set:${intent.sets[0]}`
+    queries.push(
+      originalQuery
+    );
+
+
+    // ----------------------------------------------------------
+    // Query 3: concepts represented as broad Oracle terms.
+    //
+    // This is deliberately OR-ish.
+    // ----------------------------------------------------------
+
+    const oracleTerms =
+      conceptOracleTerms(
+        intent.concepts
+      );
+
+
+    if (oracleTerms.length) {
+
+      const oracleQuery =
+        oracleTerms
+          .slice(0, 5)
+          .map(
+            term => `o:"${term}"`
+          )
+          .join(" OR ");
+
+
+      if (intent.colors.length) {
+
+        queries.push(
+          `c:${intent.colors.join("")} (${oracleQuery})`
+        );
+
+      } else {
+
+        queries.push(
+          oracleQuery
+        );
+      }
+    }
+
+
+    // ----------------------------------------------------------
+    // Reference searches
+    // ----------------------------------------------------------
+
+    for (
+      const reference of intent.references
+    ) {
+
+      queries.push(
+        `name:${quoteScryfallName(reference)}`
       );
     }
 
 
-    // Keywords are useful retrieval constraints.
+    // ----------------------------------------------------------
+    // Execute queries.
+    // ----------------------------------------------------------
 
-    for (const keyword of intent.keywords) {
-
-      parts.push(
-        `o:"${keyword}"`
-      );
-    }
+    const all =
+      new Map();
 
 
-    /*
-     * Concepts intentionally aren't all turned into hard
-     * constraints. "Similar to Sorin" is the obvious example:
-     *
-     * retrieve candidates first, then rank them.
-     */
-    for (const concept of intent.concepts) {
+    for (
+      const query of queries.slice(0, 4)
+    ) {
 
-      const oracle = {
-        draw: "draw",
-        mana: "mana",
-        sacrifice: "sacrifice",
-        graveyard: "graveyard",
-        removal: "destroy",
-        exile: "exile",
-        damage: "damage",
-        discard: "discard",
-        counter: "counter",
-        tokens: "token",
-        lifegain: "gain life",
-        tutor: "search your library",
-        mill: "mill",
-        blink: "exile",
-        copy: "copy",
-        counters: "counter",
-        extra_land: "land",
-        pump: "gets +"
-      }[concept];
+      if (!query.trim()) continue;
 
-      if (oracle) {
-        parts.push(`o:"${oracle}"`);
+
+      try {
+
+        const cards =
+          await scryfallSearch(query);
+
+
+        for (
+          const card of cards
+        ) {
+
+          all.set(
+            card.id,
+            card
+          );
+        }
+
+      } catch (error) {
+
+        console.warn(
+          "Retrieval query failed:",
+          query,
+          error
+        );
+
+        // Continue with other retrieval strategies.
       }
     }
 
 
     /*
-     * If we understood nothing, use the user's natural language
-     * directly. Scryfall has a powerful search parser of its own.
+     * If structural retrieval somehow returned nothing,
+     * make one very broad fallback query.
      */
-    if (!parts.length) {
-      return intent.original_query;
+    if (!all.size) {
+
+      try {
+
+        const fallback =
+          await scryfallSearch(
+            "game:paper"
+          );
+
+        for (
+          const card of fallback
+        ) {
+
+          all.set(
+            card.id,
+            card
+          );
+        }
+
+      } catch (error) {
+
+        console.error(
+          "Fallback retrieval failed:",
+          error
+        );
+      }
     }
 
 
-    return parts.join(" ");
+    return [...all.values()];
+  }
+
+
+  function conceptOracleTerms(concepts) {
+
+    const terms = [];
+
+
+    const mapping = {
+
+      card_draw: [
+        "draw"
+      ],
+
+      mana_ramp: [
+        "add {",
+        "search your library for a basic land"
+      ],
+
+      graveyard_recursion: [
+        "return",
+        "graveyard"
+      ],
+
+      sacrifice: [
+        "sacrifice"
+      ],
+
+      creature_removal: [
+        "destroy",
+        "exile"
+      ],
+
+      artifact_removal: [
+        "artifact",
+        "destroy"
+      ],
+
+      enchantment_removal: [
+        "enchantment",
+        "destroy"
+      ],
+
+      direct_damage: [
+        "damage"
+      ],
+
+      discard: [
+        "discard"
+      ],
+
+      counterspell: [
+        "counter target"
+      ],
+
+      token_generation: [
+        "create",
+        "token"
+      ],
+
+      lifegain: [
+        "gain life"
+      ],
+
+      tutoring: [
+        "search your library"
+      ],
+
+      mill: [
+        "mill"
+      ],
+
+      blink: [
+        "exile",
+        "return"
+      ],
+
+      copy: [
+        "copy"
+      ],
+
+      counters: [
+        "+1/+1"
+      ],
+
+      extra_lands: [
+        "additional land"
+      ],
+
+      creature_pump: [
+        "gets +"
+      ],
+
+      life_loss: [
+        "lose life"
+      ],
+
+      theft: [
+        "gain control"
+      ],
+
+      death_trigger: [
+        "dies"
+      ],
+
+      enter_battlefield: [
+        "enters the battlefield"
+      ],
+
+      cast_trigger: [
+        "cast"
+      ]
+    };
+
+
+    for (
+      const concept of concepts
+    ) {
+
+      const values =
+        mapping[concept] || [];
+
+      values.forEach(
+        value => addUnique(
+          terms,
+          value
+        )
+      );
+    }
+
+
+    return terms;
   }
 
 
   // ============================================================
-  // REFERENCE RESOLUTION
+  // SCRYFALL SEARCH
   // ============================================================
 
-  async function resolveReferences(names) {
+  async function scryfallSearch(query) {
+
+    const url =
+      `${API}/cards/search?q=${encodeURIComponent(query)}`;
+
+    const response =
+      await fetch(
+        url,
+        {
+          headers: {
+            "Accept":
+              "application/json"
+          }
+        }
+      );
+
+
+    if (
+      response.status === 404
+    ) {
+
+      return [];
+    }
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `Scryfall returned HTTP ${response.status}`
+      );
+    }
+
+
+    const data =
+      await response.json();
+
+
+    let cards =
+      data.data || [];
+
+
+    /*
+     * Follow a small number of pagination pages.
+     *
+     * This makes broad searches substantially better without
+     * turning the demo into a huge crawler.
+     */
+    let next =
+      data.has_more
+        ? data.next_page
+        : null;
+
+
+    let pages = 0;
+
+
+    while (
+      next &&
+      pages < 2
+    ) {
+
+      const nextResponse =
+        await fetch(next);
+
+
+      if (!nextResponse.ok) break;
+
+
+      const nextData =
+        await nextResponse.json();
+
+
+      cards =
+        cards.concat(
+          nextData.data || []
+        );
+
+
+      next =
+        nextData.has_more
+          ? nextData.next_page
+          : null;
+
+
+      pages++;
+    }
+
+
+    return cards;
+  }
+
+
+  // ============================================================
+  // REFERENCES
+  // ============================================================
+
+  async function resolveReferences(
+    references
+  ) {
 
     const resolved = [];
 
-    for (const name of names.slice(0, 3)) {
+
+    for (
+      const reference of references.slice(0, 3)
+    ) {
 
       try {
 
-        const response = await fetch(
-          "https://api.scryfall.com/cards/named?fuzzy=" +
-          encodeURIComponent(name)
-        );
+        const response =
+          await fetch(
+            `${API}/cards/named?fuzzy=${encodeURIComponent(reference)}`
+          );
+
 
         if (!response.ok) continue;
 
-        const card = await response.json();
+
+        const card =
+          await response.json();
+
 
         resolved.push(card);
 
       } catch (error) {
 
         console.warn(
-          "Could not resolve reference:",
-          name
+          "Reference resolution failed:",
+          reference
         );
       }
     }
+
 
     return resolved;
   }
 
 
   // ============================================================
-  // MATCH SCORING
+  // CARD CONCEPT EXTRACTION
   //
-  // Total = 0..100
+  // This is the key to semantic ranking.
   //
-  // Hard requirements carry more weight.
-  // Semantic similarity carries the rest.
+  // We don't need an embedding model for the first version.
+  // We recognize common MTG mechanics from Oracle text.
   // ============================================================
 
-  function scoreCard(card, intent, references) {
+  function inferCardConcepts(card) {
 
-    let total = 0;
+    const text =
+      normalize(
+        [
+          card.name,
+          card.type_line,
+          card.oracle_text,
+          card.flavor_text
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+
+    const concepts = new Set();
+
+
+    const rules = {
+
+      card_draw: [
+        /\bdraw\b.*\bcard/,
+        /\bdraws?\b.*\bcards?/,
+        /\bdraw a card\b/
+      ],
+
+      mana_ramp: [
+        /\badd\s+\{[wubrgc]/,
+        /\bsearch your library for a .*land/,
+        /\bput .* land .* onto the battlefield/
+      ],
+
+      graveyard_recursion: [
+        /\breturn\b.*\bfrom (?:your )?graveyard/,
+        /\breturn\b.*\bto the battlefield/,
+        /\bgraveyard\b.*\bto the battlefield/,
+        /\bput\b.*\bfrom .*graveyard\b.*\bbattlefield/
+      ],
+
+      sacrifice: [
+        /\bsacrifice\b/
+      ],
+
+      creature_removal: [
+        /\bdestroy\b.*\bcreature/,
+        /\bexile\b.*\bcreature/,
+        /\bcreature\b.*\bgets -/,
+        /\btarget creature\b/
+      ],
+
+      artifact_removal: [
+        /\bdestroy\b.*\bartifact/,
+        /\bexile\b.*\bartifact/
+      ],
+
+      enchantment_removal: [
+        /\bdestroy\b.*\benchantment/,
+        /\bexile\b.*\benchantment/
+      ],
+
+      direct_damage: [
+        /\bdeal\b.*\bdamage/,
+        /\bdeals\b.*\bdamage/,
+        /\bdamage\b.*\btarget/
+      ],
+
+      discard: [
+        /\bdiscard\b/
+      ],
+
+      counterspell: [
+        /\bcounter target\b/,
+        /\bcounter\b.*\bspell/
+      ],
+
+      token_generation: [
+        /\bcreate\b.*\btoken/,
+        /\bcreates\b.*\btoken/,
+        /\btoken\b.*\bcreature/
+      ],
+
+      lifegain: [
+        /\bgain\b.*\blife/,
+        /\bgains\b.*\blife/
+      ],
+
+      tutoring: [
+        /\bsearch your library\b/
+      ],
+
+      mill: [
+        /\bmill\b/
+      ],
+
+      blink: [
+        /\bexile\b.*\breturn\b/,
+        /\breturn\b.*\bexile\b/
+      ],
+
+      copy: [
+        /\bcopy\b/
+      ],
+
+      counters: [
+        /\+1\/\+1 counter/,
+        /\bput\b.*\bcounter\b/
+      ],
+
+      extra_lands: [
+        /\bplay an additional land/,
+        /\bplay additional lands/,
+        /\bplay one additional land/
+      ],
+
+      creature_pump: [
+        /\bcreatures you control get\b/,
+        /\bgets \+\d+\/\+\d+/,
+        /\bget \+\d+\/\+\d+/
+      ],
+
+      life_loss: [
+        /\bloses?\s+life\b/,
+        /\blife loss\b/
+      ],
+
+      theft: [
+        /\bgain control of\b/
+      ],
+
+      death_trigger: [
+        /\bwhen .* dies\b/,
+        /\bwhenever .* dies\b/
+      ],
+
+      enter_battlefield: [
+        /\bwhen .* enters the battlefield\b/,
+        /\bwhenever .* enters the battlefield\b/
+      ],
+
+      cast_trigger: [
+        /\bwhen you cast\b/,
+        /\bwhenever you cast\b/
+      ],
+
+      attack_trigger: [
+        /\bwhen .* attacks\b/,
+        /\bwhenever .* attacks\b/
+      ]
+    };
+
+
+    for (
+      const [concept, patterns]
+      of Object.entries(rules)
+    ) {
+
+      if (
+        patterns.some(
+          pattern => pattern.test(text)
+        )
+      ) {
+
+        concepts.add(concept);
+      }
+    }
+
+
+    // Keywords become concepts too.
+
+    const keywordList = [
+      "flying",
+      "haste",
+      "trample",
+      "deathtouch",
+      "lifelink",
+      "menace",
+      "vigilance",
+      "flash",
+      "hexproof",
+      "indestructible",
+      "ward",
+      "prowess",
+      "first strike",
+      "double strike",
+      "reach",
+      "toxic",
+      "infect",
+      "cascade",
+      "cycling",
+      "kicker",
+      "madness",
+      "flashback",
+      "foretell",
+      "landfall",
+      "proliferate",
+      "connive",
+      "investigate"
+    ];
+
+
+    for (
+      const keyword of keywordList
+    ) {
+
+      if (
+        text.includes(keyword)
+      ) {
+
+        concepts.add(
+          `keyword:${keyword}`
+        );
+      }
+    }
+
+
+    return [
+      ...concepts
+    ];
+  }
+
+
+  // ============================================================
+  // SCORING
+  // ============================================================
+
+  function scoreCard(
+    card,
+    cardConcepts,
+    intent,
+    references
+  ) {
+
+    let score = 0;
 
     const reasons = [];
+
 
     // ----------------------------------------------------------
     // TYPE
     // ----------------------------------------------------------
 
-    if (intent.type) {
+    if (intent.cardTypes.length) {
 
-      if (
-        card.type_line &&
-        card.type_line
-          .toLowerCase()
-          .includes(intent.type)
-      ) {
+      const typeLine =
+        normalize(
+          card.type_line || ""
+        );
 
-        total += 18;
+
+      const matches =
+        intent.cardTypes.filter(
+          type =>
+            typeLine.includes(type)
+        );
+
+
+      if (matches.length) {
+
+        score +=
+          20 *
+          (
+            matches.length /
+            intent.cardTypes.length
+          );
 
         reasons.push(
-          `Type: ${intent.type}`
+          `Type: ${matches.join(", ")}`
         );
       }
     }
@@ -1326,27 +2040,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (intent.subtypes.length) {
 
-      const line =
-        (card.type_line || "")
-          .toLowerCase();
+      const typeLine =
+        normalize(
+          card.type_line || ""
+        );
 
-      let matches = 0;
 
-      for (const subtype of intent.subtypes) {
+      const matches =
+        intent.subtypes.filter(
+          subtype =>
+            typeLine.includes(subtype)
+        );
 
-        if (line.includes(subtype)) {
-          matches++;
-        }
-      }
 
-      if (matches) {
+      if (matches.length) {
 
-        total +=
+        score +=
           20 *
-          (matches / intent.subtypes.length);
+          (
+            matches.length /
+            intent.subtypes.length
+          );
 
         reasons.push(
-          `Subtype: ${intent.subtypes.join(", ")}`
+          `Tribe: ${matches.join(", ")}`
         );
       }
     }
@@ -1361,22 +2078,25 @@ document.addEventListener("DOMContentLoaded", () => {
       const cardColors =
         card.colors || [];
 
-      const intersection =
+
+      const matches =
         intent.colors.filter(
-          c => cardColors.includes(c)
+          color =>
+            cardColors.includes(color)
         );
 
-      if (intersection.length) {
 
-        total +=
-          18 *
+      if (matches.length) {
+
+        score +=
+          15 *
           (
-            intersection.length /
+            matches.length /
             intent.colors.length
           );
 
         reasons.push(
-          "Color identity"
+          "Color match"
         );
       }
     }
@@ -1387,48 +2107,60 @@ document.addEventListener("DOMContentLoaded", () => {
     // ----------------------------------------------------------
 
     if (
-      intent.mana_value.max !== null ||
-      intent.mana_value.min !== null ||
-      intent.mana_value.exact !== null
+      intent.mana.exact !== null ||
+      intent.mana.min !== null ||
+      intent.mana.max !== null
     ) {
 
-      const mv =
-        card.cmc ?? 0;
+      const mana =
+        Number(card.cmc ?? 0);
+
 
       if (
-        intent.mana_value.exact !== null &&
-        mv === intent.mana_value.exact
+        intent.mana.exact !== null
       ) {
 
-        total += 12;
+        if (
+          mana ===
+          intent.mana.exact
+        ) {
 
-        reasons.push(
-          "Exact mana value"
-        );
+          score += 12;
+
+          reasons.push(
+            "Exact mana value"
+          );
+        }
 
       } else {
 
+        let matched = false;
+
+
         if (
-          intent.mana_value.max !== null &&
-          mv <= intent.mana_value.max
+          intent.mana.max !== null &&
+          mana <= intent.mana.max
         ) {
 
-          total += 10;
+          score += 10;
+          matched = true;
 
           reasons.push(
             "Low mana value"
           );
         }
 
+
         if (
-          intent.mana_value.min !== null &&
-          mv >= intent.mana_value.min
+          intent.mana.min !== null &&
+          mana >= intent.mana.min
         ) {
 
-          total += 10;
+          score += 10;
+          matched = true;
 
           reasons.push(
-            "High mana value"
+            "Mana value matches"
           );
         }
       }
@@ -1441,30 +2173,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (intent.keywords.length) {
 
+      let matched = 0;
+
       const oracle =
-        (card.oracle_text || "")
-          .toLowerCase();
+        normalize(
+          card.oracle_text || ""
+        );
 
-      let matches = 0;
 
-      for (const keyword of intent.keywords) {
+      for (
+        const keyword of intent.keywords
+      ) {
 
-        if (oracle.includes(keyword)) {
-          matches++;
+        if (
+          oracle.includes(keyword)
+        ) {
+
+          matched++;
         }
       }
 
-      if (matches) {
 
-        total +=
-          12 *
+      if (matched) {
+
+        score +=
+          15 *
           (
-            matches /
+            matched /
             intent.keywords.length
           );
 
         reasons.push(
-          `${matches} requested keyword${matches === 1 ? "" : "s"}`
+          `${matched} keyword${matched === 1 ? "" : "s"}`
         );
       }
     }
@@ -1476,31 +2216,87 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (intent.concepts.length) {
 
-      let conceptMatches = 0;
+      const matches =
+        intent.concepts.filter(
+          concept =>
+            cardConcepts.includes(
+              concept
+            )
+        );
 
-      for (const concept of intent.concepts) {
 
-        if (
-          cardMatchesConcept(
-            card,
-            concept
-          )
-        ) {
-          conceptMatches++;
-        }
-      }
+      if (matches.length) {
 
-      if (conceptMatches) {
-
-        total +=
-          15 *
+        score +=
+          25 *
           (
-            conceptMatches /
+            matches.length /
             intent.concepts.length
           );
 
+
         reasons.push(
-          `${conceptMatches} matching mechanic${conceptMatches === 1 ? "" : "s"}`
+          `${matches.length} matching mechanic${matches.length === 1 ? "" : "s"}`
+        );
+      }
+    }
+
+
+    // ----------------------------------------------------------
+    // ZONES
+    // ----------------------------------------------------------
+
+    if (intent.zones.length) {
+
+      const cardText =
+        normalize(
+          card.oracle_text || ""
+        );
+
+
+      const zoneMatches =
+        intent.zones.filter(
+          zone =>
+            cardText.includes(zone)
+        );
+
+
+      if (zoneMatches.length) {
+
+        score +=
+          8 *
+          (
+            zoneMatches.length /
+            intent.zones.length
+          );
+
+        reasons.push(
+          `Zone: ${zoneMatches.join(", ")}`
+        );
+      }
+    }
+
+
+    // ----------------------------------------------------------
+    // STRATEGY
+    // ----------------------------------------------------------
+
+    if (intent.strategies.length) {
+
+      const strategyScore =
+        scoreStrategies(
+          card,
+          cardConcepts,
+          intent.strategies
+        );
+
+
+      if (strategyScore > 0) {
+
+        score += strategyScore;
+
+        reasons.push(
+          "Strategy synergy"
         );
       }
     }
@@ -1512,171 +2308,294 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (references.length) {
 
-      const similarity =
-        referenceSimilarity(
+      const reference =
+        findBestReferenceMatch(
           card,
+          cardConcepts,
           references
         );
 
-      total += similarity.score;
 
-      if (similarity.score > 0) {
+      if (reference.score > 0) {
+
+        score += reference.score;
 
         reasons.push(
-          `Similar to ${similarity.reference}`
+          `Similar to ${reference.name}`
         );
       }
     }
 
 
     // ----------------------------------------------------------
-    // PREFERENCES
-    // ----------------------------------------------------------
-
-    if (
-      intent.preferences.includes("low_cost")
-    ) {
-
-      if ((card.cmc ?? 0) <= 3) {
-        total += 5;
-        reasons.push("Efficient");
-      }
-    }
-
-
-    if (
-      intent.preferences.includes("power")
-    ) {
-
-      const oracle =
-        (card.oracle_text || "")
-          .toLowerCase();
-
-      if (
-        oracle.length > 50 ||
-        (card.cmc ?? 0) >= 4
-      ) {
-        total += 3;
-        reasons.push("Powerful effect");
-      }
-    }
-
-
-    if (
-      intent.preferences.includes("value")
-    ) {
-
-      const oracle =
-        (card.oracle_text || "")
-          .toLowerCase();
-
-      if (
-        oracle.includes("draw") ||
-        oracle.includes("token") ||
-        oracle.includes("return")
-      ) {
-        total += 5;
-        reasons.push("Value engine");
-      }
-    }
-
-
-    // ----------------------------------------------------------
-    // PENALTIES
+    // EXCLUSIONS
     // ----------------------------------------------------------
 
     if (intent.exclusions.length) {
 
       const text =
-        (
-          card.name +
-          " " +
-          card.type_line +
-          " " +
-          card.oracle_text
-        ).toLowerCase();
+        normalize(
+          [
+            card.name,
+            card.type_line,
+            card.oracle_text
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
 
-      for (const exclusion of intent.exclusions) {
 
-        if (text.includes(exclusion)) {
-          total -= 20;
+      for (
+        const exclusion of intent.exclusions
+      ) {
+
+        if (
+          text.includes(exclusion)
+        ) {
+
+          score -= 25;
+
+          reasons.push(
+            `Excluded: ${exclusion}`
+          );
         }
       }
     }
 
 
+    // ----------------------------------------------------------
+    // SOFT BONUSES
+    // ----------------------------------------------------------
+
+    const original =
+      normalize(
+        intent.original
+      );
+
+
+    if (
+      original.includes("cheap") ||
+      original.includes("efficient")
+    ) {
+
+      if (
+        Number(card.cmc ?? 0) <= 3
+      ) {
+
+        score += 5;
+
+        reasons.push(
+          "Efficient"
+        );
+      }
+    }
+
+
+    if (
+      original.includes("powerful") ||
+      original.includes("strong")
+    ) {
+
+      if (
+        (card.oracle_text || "").length > 60
+      ) {
+
+        score += 3;
+      }
+    }
+
+
+    // ----------------------------------------------------------
+    // Final score
+    // ----------------------------------------------------------
+
     return {
+
       total: Math.max(
         0,
         Math.min(
           100,
-          Math.round(total)
+          Math.round(score)
         )
       ),
 
-      reasons
+      reasons:
+        [...new Set(reasons)]
+          .slice(0, 6)
     };
   }
 
 
   // ============================================================
-  // REFERENCE SIMILARITY
-  //
-  // This is deliberately interpretable.
-  //
-  // We compare:
-  //
-  // - colors
-  // - type
-  // - subtypes
-  // - mana
-  // - keywords
-  // - Oracle concepts
+  // STRATEGY SCORING
   // ============================================================
 
-  function referenceSimilarity(card, references) {
+  function scoreStrategies(
+    card,
+    concepts,
+    strategies
+  ) {
+
+    let score = 0;
+
+    const conceptSet =
+      new Set(concepts);
+
+
+    for (
+      const strategy of strategies
+    ) {
+
+      if (
+        strategy === "aristocrats" &&
+        (
+          conceptSet.has("sacrifice") ||
+          conceptSet.has("death_trigger") ||
+          conceptSet.has("graveyard_recursion")
+        )
+      ) {
+
+        score += 8;
+      }
+
+
+      if (
+        strategy === "reanimator" &&
+        conceptSet.has(
+          "graveyard_recursion"
+        )
+      ) {
+
+        score += 8;
+      }
+
+
+      if (
+        strategy === "spellslinger" &&
+        (
+          conceptSet.has("card_draw") ||
+          conceptSet.has("counterspell") ||
+          conceptSet.has("direct_damage")
+        )
+      ) {
+
+        score += 6;
+      }
+
+
+      if (
+        strategy === "tokens" &&
+        conceptSet.has(
+          "token_generation"
+        )
+      ) {
+
+        score += 8;
+      }
+
+
+      if (
+        strategy === "lifegain" &&
+        conceptSet.has(
+          "lifegain"
+        )
+      ) {
+
+        score += 8;
+      }
+
+
+      if (
+        strategy === "artifacts" &&
+        normalize(
+          card.type_line || ""
+        ).includes("artifact")
+      ) {
+
+        score += 6;
+      }
+
+
+      if (
+        strategy === "enchantress" &&
+        normalize(
+          card.type_line || ""
+        ).includes("enchantment")
+      ) {
+
+        score += 6;
+      }
+    }
+
+
+    return Math.min(
+      12,
+      score
+    );
+  }
+
+
+  // ============================================================
+  // REFERENCE SIMILARITY
+  // ============================================================
+
+  function findBestReferenceMatch(
+    card,
+    concepts,
+    references
+  ) {
 
     let best = {
       score: 0,
-      reference: ""
+      name: ""
     };
 
 
-    for (const reference of references) {
+    for (
+      const reference of references
+    ) {
 
       let score = 0;
 
 
-      // Colors
+      // Same color
 
-      const aColors =
+      const cardColors =
         card.colors || [];
 
-      const bColors =
+      const referenceColors =
         reference.colors || [];
 
-      if (aColors.length && bColors.length) {
 
-        const common =
-          aColors.filter(
-            color => bColors.includes(color)
-          );
+      if (
+        cardColors.length &&
+        referenceColors.length &&
+        cardColors.some(
+          color =>
+            referenceColors.includes(
+              color
+            )
+        )
+      ) {
 
-        if (common.length) {
-          score += 5;
-        }
+        score += 4;
       }
 
 
-      // Type
+      // Same broad type
 
-      const aType =
-        card.type_line || "";
+      const cardType =
+        normalize(
+          card.type_line || ""
+        );
 
-      const bType =
-        reference.type_line || "";
+      const referenceType =
+        normalize(
+          reference.type_line || ""
+        );
 
-      const types = [
+
+      const broadTypes = [
         "creature",
         "artifact",
         "enchantment",
@@ -1686,28 +2605,25 @@ document.addEventListener("DOMContentLoaded", () => {
         "land"
       ];
 
-      for (const type of types) {
+
+      for (
+        const type of broadTypes
+      ) {
 
         if (
-          aType.toLowerCase().includes(type) &&
-          bType.toLowerCase().includes(type)
+          cardType.includes(type) &&
+          referenceType.includes(type)
         ) {
 
-          score += 4;
+          score += 5;
           break;
         }
       }
 
 
-      // Subtypes
+      // Same tribe
 
-      const aLine =
-        aType.toLowerCase();
-
-      const bLine =
-        bType.toLowerCase();
-
-      const commonSubtypes = [
+      const tribes = [
         "vampire",
         "wizard",
         "elf",
@@ -1725,113 +2641,129 @@ document.addEventListener("DOMContentLoaded", () => {
         "merfolk"
       ];
 
-      for (const subtype of commonSubtypes) {
+
+      for (
+        const tribe of tribes
+      ) {
 
         if (
-          aLine.includes(subtype) &&
-          bLine.includes(subtype)
+          cardType.includes(tribe) &&
+          referenceType.includes(tribe)
         ) {
-          score += 5;
+
+          score += 6;
         }
       }
 
 
       // Mana proximity
 
-      if (
-        typeof card.cmc === "number" &&
-        typeof reference.cmc === "number"
-      ) {
+      const a =
+        Number(card.cmc ?? 0);
 
-        const difference =
-          Math.abs(
-            card.cmc -
-            reference.cmc
-          );
+      const b =
+        Number(reference.cmc ?? 0);
 
-        if (difference === 0) {
-          score += 5;
-        } else if (difference === 1) {
-          score += 3;
-        }
+
+      const difference =
+        Math.abs(a - b);
+
+
+      if (difference === 0) {
+        score += 5;
+      } else if (difference === 1) {
+        score += 3;
       }
 
 
-      // Keywords / Oracle text
+      // Shared mechanics
+
+      const referenceConcepts =
+        inferCardConcepts(
+          reference
+        );
+
+
+      const shared =
+        concepts.filter(
+          concept =>
+            referenceConcepts.includes(
+              concept
+            )
+        );
+
+
+      score +=
+        Math.min(
+          10,
+          shared.length * 2
+        );
+
+
+      // Shared keywords
 
       const aText =
-        (
+        normalize(
           card.oracle_text || ""
-        ).toLowerCase();
+        );
 
       const bText =
-        (
+        normalize(
           reference.oracle_text || ""
-        ).toLowerCase();
+        );
 
 
-      const semanticTerms = [
+      const keywords = [
+        "flying",
+        "haste",
+        "trample",
+        "deathtouch",
+        "lifelink",
+        "menace",
+        "vigilance",
+        "flash",
+        "hexproof",
+        "indestructible",
+        "ward",
         "draw",
-        "discard",
         "sacrifice",
-        "destroy",
-        "exile",
+        "graveyard",
         "damage",
         "token",
-        "graveyard",
-        "return",
+        "discard",
         "counter",
-        "life",
-        "search",
-        "land",
-        "creature",
-        "planeswalker",
-        "attack",
-        "combat",
-        "cast",
-        "spell",
-        "mana",
-        "power",
-        "toughness",
-        "copy",
-        "gain",
-        "lose"
+        "exile"
       ];
 
 
-      let sharedConcepts = 0;
-
-      for (const term of semanticTerms) {
+      for (
+        const keyword of keywords
+      ) {
 
         if (
-          aText.includes(term) &&
-          bText.includes(term)
+          aText.includes(keyword) &&
+          bText.includes(keyword)
         ) {
-          sharedConcepts++;
+
+          score += 1;
         }
       }
 
 
-      score += Math.min(
-        12,
-        sharedConcepts * 2
-      );
+      score =
+        Math.min(
+          25,
+          score
+        );
 
 
-      // Cap the contribution so "similar to" doesn't overpower
-      // explicit user requirements.
-
-      score = Math.min(
-        25,
-        score
-      );
-
-
-      if (score > best.score) {
+      if (
+        score > best.score
+      ) {
 
         best = {
           score,
-          reference: reference.name
+          name: reference.name
         };
       }
     }
@@ -1842,154 +2774,229 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // ============================================================
-  // CARD RENDERING
+  // RESULTS UI
   // ============================================================
 
-  function renderCards() {
+  function renderResults() {
 
-    results.innerHTML = cards
-      .slice(0, 24)
-      .map((card, index) => {
-
-        const image =
-          card.image_uris?.normal ||
-          card.card_faces?.[0]?.image_uris?.normal;
-
-        if (!image) return "";
+    const visible =
+      currentCards.slice(
+        0,
+        30
+      );
 
 
-        const match =
-          card._match || {
-            total: 0,
-            reasons: []
-          };
+    results.innerHTML =
+      visible
+        .map(
+          (card, index) =>
+            renderCard(
+              card,
+              index
+            )
+        )
+        .join("");
 
 
-        const scoreColor =
-          match.total >= 80
-            ? "#67d391"
-            : match.total >= 60
-              ? "#d4af67"
-              : match.total >= 40
-                ? "#d69a58"
-                : "#8f8b95";
+    results
+      .querySelectorAll(
+        "[data-card-index]"
+      )
+      .forEach(element => {
+
+        element.addEventListener(
+          "click",
+          () => {
+
+            openCard(
+              Number(
+                element.dataset.cardIndex
+              )
+            );
+          }
+        );
+      });
+  }
 
 
-        return `
-          <article
-            class="card"
-            data-index="${index}"
-            style="position:relative;"
+  function renderCard(
+    card,
+    index
+  ) {
+
+    const image =
+      card.image_uris?.normal ||
+      card.card_faces?.[0]
+        ?.image_uris?.normal;
+
+
+    if (!image) {
+      return "";
+    }
+
+
+    const match =
+      card._match || {
+        total: 0,
+        reasons: []
+      };
+
+
+    const scoreColor =
+      match.total >= 80
+        ? "#67d391"
+        : match.total >= 60
+          ? "#d4af67"
+          : match.total >= 40
+            ? "#d69a58"
+            : "#88848f";
+
+
+    return `
+      <article
+        class="card"
+        data-card-index="${index}"
+        style="cursor:pointer;"
+      >
+
+        <img
+          src="${escapeHtml(image)}"
+          alt="${escapeHtml(card.name)}"
+          loading="lazy"
+        >
+
+        <div
+          class="match-score"
+          style="margin-top:8px;"
+        >
+
+          <div
+            style="
+              display:flex;
+              justify-content:space-between;
+              align-items:center;
+              margin-bottom:5px;
+            "
           >
 
-            <img
-              src="${escapeHtml(image)}"
-              alt="${escapeHtml(card.name)}"
-              loading="lazy"
-            >
-
-            <div
-              class="match-score"
+            <span
               style="
-                margin-top:8px;
+                color:#8f8b95;
+                font-size:10px;
+                letter-spacing:.08em;
+              "
+            >
+              MATCH
+            </span>
+
+            <strong
+              style="
+                color:${scoreColor};
                 font-size:12px;
               "
             >
+              ${match.total}%
+            </strong>
 
-              <div style="
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                margin-bottom:4px;
-              ">
+          </div>
 
-                <span style="
-                  color:#aaa7b0;
-                  font-size:11px;
-                ">
-                  MATCH
-                </span>
 
-                <strong style="
-                  color:${scoreColor};
-                ">
-                  ${match.total}%
-                </strong>
+          <div
+            style="
+              height:4px;
+              background:#242229;
+              border-radius:99px;
+              overflow:hidden;
+            "
+          >
 
-              </div>
-
-              <div style="
-                width:100%;
-                height:4px;
-                background:#242229;
+            <div
+              style="
+                width:${match.total}%;
+                height:100%;
+                background:${scoreColor};
                 border-radius:99px;
-                overflow:hidden;
-              ">
+              "
+            ></div>
 
-                <div style="
-                  width:${match.total}%;
-                  height:100%;
-                  background:${scoreColor};
-                  border-radius:99px;
-                  transition:width .4s ease;
-                "></div>
-
-              </div>
-
-            </div>
+          </div>
 
 
-            <div class="card-name">
-              ${escapeHtml(card.name)}
-            </div>
+          ${
+            match.reasons.length
+              ? `
+                <div
+                  style="
+                    margin-top:6px;
+                    color:#77737e;
+                    font-size:10px;
+                    line-height:1.5;
+                  "
+                >
+                  ${match.reasons
+                    .slice(0, 2)
+                    .map(
+                      reason =>
+                        `<div>✓ ${escapeHtml(reason)}</div>`
+                    )
+                    .join("")}
+                </div>
+              `
+              : ""
+          }
 
-            <div class="card-type">
-              ${escapeHtml(card.type_line || "")}
-            </div>
-
-          </article>
-        `;
-      })
-      .join("");
+        </div>
 
 
-    document.querySelectorAll(".card").forEach(card => {
+        <div class="card-name">
+          ${escapeHtml(card.name)}
+        </div>
 
-      card.addEventListener("click", () => {
+        <div class="card-type">
+          ${escapeHtml(card.type_line || "")}
+        </div>
 
-        openCard(
-          Number(card.dataset.index)
-        );
-      });
-    });
+      </article>
+    `;
   }
 
 
   // ============================================================
-  // MODAL
+  // CARD MODAL
   // ============================================================
 
   function openCard(index) {
 
-    const card = cards[index];
+    const card =
+      currentCards[index];
 
     if (!card || !modal) return;
 
+
     const image =
       card.image_uris?.large ||
-      card.card_faces?.[0]?.image_uris?.large;
+      card.card_faces?.[0]
+        ?.image_uris?.large;
+
 
     const modalImage =
-      document.getElementById("modal-image");
+      document.getElementById(
+        "modal-image"
+      );
 
     const modalDetails =
-      document.getElementById("modal-details");
+      document.getElementById(
+        "modal-details"
+      );
 
 
-    if (modalImage) {
+    if (modalImage && image) {
 
-      modalImage.src = image;
-      modalImage.alt = card.name;
+      modalImage.src =
+        image;
+
+      modalImage.alt =
+        card.name;
     }
 
 
@@ -2010,56 +3017,68 @@ document.addEventListener("DOMContentLoaded", () => {
 
         <div
           style="
-            margin-bottom:18px;
             padding:12px;
-            border-radius:10px;
-            background:#111014;
+            margin-bottom:18px;
             border:1px solid #302e35;
+            background:#111014;
+            border-radius:10px;
           "
         >
 
-          <div style="
-            display:flex;
-            justify-content:space-between;
-            margin-bottom:7px;
-          ">
+          <div
+            style="
+              display:flex;
+              justify-content:space-between;
+              margin-bottom:6px;
+            "
+          >
 
-            <span style="color:#aaa7b0">
-              Match score
+            <span
+              style="color:#aaa7b0"
+            >
+              Match
             </span>
 
-            <strong style="
-              color:#d4af67;
-            ">
+            <strong
+              style="color:#d4af67"
+            >
               ${match.total}%
             </strong>
 
           </div>
 
-          <div style="
-            height:5px;
-            background:#28252d;
-            border-radius:99px;
-            overflow:hidden;
-          ">
 
-            <div style="
-              width:${match.total}%;
-              height:100%;
-              background:#d4af67;
-            "></div>
+          <div
+            style="
+              height:5px;
+              background:#28252d;
+              border-radius:99px;
+              overflow:hidden;
+            "
+          >
+
+            <div
+              style="
+                width:${match.total}%;
+                height:100%;
+                background:#d4af67;
+              "
+            ></div>
 
           </div>
+
 
           ${
             match.reasons.length
               ? `
-                <div style="
-                  margin-top:10px;
-                  color:#aaa7b0;
-                  font-size:12px;
-                  line-height:1.6;
-                ">
+                <div
+                  style="
+                    margin-top:10px;
+                    color:#aaa7b0;
+                    font-size:12px;
+                    line-height:1.6;
+                  "
+                >
                   ${match.reasons
                     .map(
                       reason =>
@@ -2074,74 +3093,109 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
 
-        <div class="detail-label">
-          Mana
-        </div>
+        ${detail(
+          "Mana",
+          card.mana_cost
+        )}
 
-        <div>
-          ${escapeHtml(card.mana_cost || "—")}
-        </div>
+        ${detail(
+          "Type",
+          card.type_line
+        )}
 
-
-        <div class="detail-label">
-          Type
-        </div>
-
-        <div>
-          ${escapeHtml(card.type_line || "—")}
-        </div>
-
-
-        <div class="detail-label">
-          Rules
-        </div>
-
-        <div>
-          ${escapeHtml(card.oracle_text || "—")}
-        </div>
-
+        ${detail(
+          "Rules",
+          card.oracle_text
+        )}
 
         ${
           card.flavor_text
-            ? `
-              <div class="detail-label">
-                Flavor
-              </div>
-
-              <div>
-                <em>
-                  ${escapeHtml(card.flavor_text)}
-                </em>
-              </div>
-            `
+            ? detail(
+                "Flavor",
+                card.flavor_text,
+                true
+              )
             : ""
         }
 
+        ${detail(
+          "Set",
+          card.set_name
+        )}
 
-        <div class="detail-label">
-          Set
-        </div>
+        ${
+          card.scryfall_uri
+            ? `
+              <br>
 
-        <div>
-          ${escapeHtml(card.set_name || "—")}
-        </div>
-
-
-        <br>
-
-        <a
-          href="${escapeHtml(card.scryfall_uri)}"
-          target="_blank"
-          rel="noopener noreferrer"
-          style="color:#d4af67"
-        >
-          View on Scryfall →
-        </a>
+              <a
+                href="${escapeHtml(
+                  card.scryfall_uri
+                )}"
+                target="_blank"
+                rel="noopener noreferrer"
+                style="color:#d4af67"
+              >
+                View on Scryfall →
+              </a>
+            `
+            : ""
+        }
       `;
     }
 
 
-    modal.classList.remove("hidden");
+    modal.classList.remove(
+      "hidden"
+    );
+  }
+
+
+  function detail(
+    label,
+    value,
+    italic = false
+  ) {
+
+    if (!value) {
+      value = "—";
+    }
+
+
+    return `
+      <div
+        style="
+          margin-top:13px;
+        "
+      >
+
+        <div
+          style="
+            color:#77737e;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:.08em;
+            margin-bottom:4px;
+          "
+        >
+          ${escapeHtml(label)}
+        </div>
+
+        <div
+          style="
+            color:#ddd9e0;
+            line-height:1.5;
+          "
+        >
+          ${
+            italic
+              ? `<em>${escapeHtml(value)}</em>`
+              : escapeHtml(value)
+          }
+        </div>
+
+      </div>
+    `;
   }
 
 
@@ -2149,64 +3203,140 @@ document.addEventListener("DOMContentLoaded", () => {
   // INTERPRETATION UI
   // ============================================================
 
-  function showInterpretation(intent) {
+  function renderInterpretation(
+    intent
+  ) {
 
-    if (!interpretation) return;
+    if (!interpretation) {
+      return;
+    }
+
+
+    const chips = [];
+
+
+    intent.colors.forEach(
+      color =>
+        chips.push(
+          `Color ${color}`
+        )
+    );
+
+
+    intent.cardTypes.forEach(
+      type =>
+        chips.push(
+          type
+        )
+    );
+
+
+    intent.subtypes.forEach(
+      subtype =>
+        chips.push(
+          subtype
+        )
+    );
+
+
+    intent.concepts.forEach(
+      concept =>
+        chips.push(
+          prettyConcept(
+            concept
+          )
+        )
+    );
+
+
+    intent.keywords.forEach(
+      keyword =>
+        chips.push(
+          keyword
+        )
+    );
+
+
+    intent.references.forEach(
+      reference =>
+        chips.push(
+          `similar to ${reference}`
+        )
+    );
+
 
     interpretation.innerHTML = `
       <details>
+
         <summary>
-          Show interpretation
+          Interpreted as
+          ${
+            chips.length
+              ? ` · ${chips
+                  .slice(0, 5)
+                  .join(" · ")}`
+              : ""
+          }
         </summary>
 
-        <div style="
-          margin-top:10px;
-          padding:14px;
-          border-radius:10px;
-          background:#09090c;
-          border:1px solid #302e35;
-        ">
+        <div
+          style="
+            margin-top:10px;
+            padding:12px;
+            background:#09090c;
+            border:1px solid #302e35;
+            border-radius:10px;
+          "
+        >
 
-          <pre style="
-            margin:0;
-            white-space:pre-wrap;
-            color:#aaa7b0;
-            font-size:11px;
-            line-height:1.5;
-          ">${escapeHtml(
-            JSON.stringify(intent, null, 2)
+          <pre
+            style="
+              margin:0;
+              color:#aaa7b0;
+              font-size:11px;
+              line-height:1.5;
+              white-space:pre-wrap;
+            "
+          >${escapeHtml(
+            JSON.stringify(
+              intent,
+              null,
+              2
+            )
           )}</pre>
 
         </div>
+
       </details>
     `;
   }
 
 
-  // ============================================================
-  // UTILS
-  // ============================================================
+  function prettyConcept(
+    concept
+  ) {
 
-  function wordExists(text, word) {
-
-    return new RegExp(
-      `(^|\\s)${escapeRegex(word)}(?=\\s|$)`,
-      "i"
-    ).test(text);
+    return concept
+      .replace(
+        /^keyword:/,
+        ""
+      )
+      .replaceAll(
+        "_",
+        " "
+      );
   }
 
 
-  function addUnique(array, value) {
+  // ============================================================
+  // HELPERS
+  // ============================================================
 
-    if (!array.includes(value)) {
-      array.push(value);
-    }
-  }
+  function normalize(value) {
 
-
-  function normalize(text) {
-
-    return text
+    return String(
+      value || ""
+    )
       .toLowerCase()
       .replace(/[’']/g, "'")
       .replace(/[–—]/g, "-")
@@ -2215,21 +3345,96 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
-  function escapeRegex(value) {
+  function hasWord(
+    text,
+    word
+  ) {
 
-    return String(value)
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(
+      `(^|\\s)${escapeRegex(
+        word
+      )}(?=\\s|$)`,
+      "i"
+    ).test(text);
   }
 
 
-  function escapeHtml(value) {
+  function addUnique(
+    array,
+    value
+  ) {
 
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+    if (
+      !array.includes(value)
+    ) {
+
+      array.push(value);
+    }
+  }
+
+
+  function escapeRegex(
+    value
+  ) {
+
+    return String(value)
+      .replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+  }
+
+
+  function escapeHtml(
+    value
+  ) {
+
+    return String(
+      value ?? ""
+    )
+      .replaceAll(
+        "&",
+        "&amp;"
+      )
+      .replaceAll(
+        "<",
+        "&lt;"
+      )
+      .replaceAll(
+        ">",
+        "&gt;"
+      )
+      .replaceAll(
+        '"',
+        "&quot;"
+      )
+      .replaceAll(
+        "'",
+        "&#039;"
+      );
+  }
+
+
+  function quoteScryfallName(
+    name
+  ) {
+
+    return `"${String(name)
+      .replaceAll(
+        '"',
+        ""
+      )}"`;
+  }
+
+
+  function setStatus(
+    message
+  ) {
+
+    if (status) {
+      status.textContent =
+        message;
+    }
   }
 
 });
