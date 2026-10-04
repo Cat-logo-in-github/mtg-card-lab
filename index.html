@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Card Lab — MTG Search</title>
+  <title>MTG Card Lab</title>
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -12,38 +12,51 @@
     <header>
       <div class="eyebrow">MAGIC: THE GATHERING</div>
       <h1>Card Lab</h1>
-      <p>Describe what you're looking for. We'll find the cards.</p>
+      <p>Describe the card you're looking for.</p>
     </header>
 
     <section class="search-box">
       <textarea id="query"
-        placeholder="Try “cheap green creatures that make mana” or “blue cards that draw cards”"></textarea>
+        placeholder="Try: cheap green creatures that make mana"></textarea>
 
-      <div class="search-row">
-        <button id="search">Find Cards</button>
-        <button id="random" class="secondary">Surprise Me</button>
+      <div class="examples">
+        <button data-query="cheap green creatures that make mana">
+          Green mana
+        </button>
+        <button data-query="blue cards that draw cards">
+          Card draw
+        </button>
+        <button data-query="black creatures that return from the graveyard">
+          Graveyard
+        </button>
+        <button data-query="red spells that deal damage">
+          Burn
+        </button>
+      </div>
+
+      <div class="actions">
+        <button id="search">Find cards</button>
+        <button id="random" class="secondary">Surprise me</button>
       </div>
 
       <div id="interpretation"></div>
     </section>
 
-    <section class="results-header">
-      <span id="status"></span>
-    </section>
+    <div id="status"></div>
 
     <section id="results"></section>
 
     <footer>
-      Card data and images provided by
-      <a href="https://scryfall.com" target="_blank">Scryfall</a>.
+      Card data &amp; images by
+      <a href="https://scryfall.com" target="_blank">Scryfall</a>
     </footer>
   </main>
 
   <div id="modal" class="modal hidden">
-    <div class="modal-card">
+    <div class="modal-inner">
       <button id="close" class="close">×</button>
-      <img id="modal-image" src="" alt="">
-      <div id="modal-info"></div>
+      <img id="modal-image" alt="">
+      <div id="modal-details"></div>
     </div>
   </div>
 
