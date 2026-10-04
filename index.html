@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTG Card Lab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>MTG Card Lab</h1>
+    <p class="subtitle">Describe a card. Let the magic happen.</p>
+
+    <textarea
+      id="prompt"
+      placeholder="A legendary vampire who rules a city of the dead..."
+    ></textarea>
+
+    <div class="controls">
+      <button id="generate">Generate Card</button>
+    </div>
+
+    <p id="status"></p>
+
+    <div id="result"></div>
+
+    <footer>
+      Card generation powered by
+      <a href="https://github.com/forrestcoward/MTG-Card-Generator" target="_blank">
+        MTG Card Generator
+      </a>.
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
