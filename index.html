@@ -1,37 +1,280 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MTG Card Lab</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTG Card Lab</title>
+
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 50% -20%, #3b3150 0, transparent 45%),
+      #0b0b0e;
+    color: #f4f1ea;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+  }
+
+  main {
+    width: min(1100px, 92%);
+    margin: 0 auto;
+    padding: 70px 0 80px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 42px;
+  }
+
+  .eyebrow {
+    color: #c8a96b;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  h1 {
+    font-family: Georgia, serif;
+    font-size: clamp(42px, 7vw, 72px);
+    line-height: 1;
+    margin: 12px 0;
+  }
+
+  .subtitle {
+    color: #9995a0;
+    font-size: 17px;
+  }
+
+  .search {
+    display: flex;
+    gap: 10px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 17px 20px;
+    border: 1px solid #3b3940;
+    border-radius: 12px;
+    outline: none;
+    background: #17161b;
+    color: white;
+    font: inherit;
+    font-size: 16px;
+  }
+
+  input:focus {
+    border-color: #c8a96b;
+    box-shadow: 0 0 0 3px #c8a96b22;
+  }
+
+  button {
+    padding: 0 24px;
+    border: 0;
+    border-radius: 12px;
+    background: #c8a96b;
+    color: #16130d;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #e0c487;
+  }
+
+  #status {
+    min-height: 28px;
+    margin: 28px 0;
+    text-align: center;
+    color: #8f8b96;
+  }
+
+  #results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 24px;
+  }
+
+  .card {
+    cursor: pointer;
+    transition: transform .2s, filter .2s;
+  }
+
+  .card:hover {
+    transform: translateY(-7px);
+    filter: brightness(1.08);
+  }
+
+  .card img {
+    display: block;
+    width: 100%;
+    border-radius: 12px;
+    box-shadow: 0 15px 35px #0009;
+  }
+
+  .card-name {
+    margin-top: 11px;
+    font-weight: 700;
+  }
+
+  .card-type {
+    margin-top: 4px;
+    color: #88848e;
+    font-size: 13px;
+  }
+
+  .empty {
+    text-align: center;
+    color: #77737c;
+    grid-column: 1 / -1;
+    padding: 50px;
+  }
+
+  footer {
+    margin-top: 70px;
+    text-align: center;
+    color: #57545c;
+    font-size: 12px;
+  }
+
+  footer a {
+    color: #817b88;
+  }
+
+  @media (max-width: 600px) {
+    .search {
+      flex-direction: column;
+    }
+
+    button {
+      height: 50px;
+    }
+
+    #results {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+  }
+</style>
 </head>
+
 <body>
-  <main>
-    <h1>MTG Card Lab</h1>
-    <p class="subtitle">Describe a card. Let the magic happen.</p>
 
-    <textarea
-      id="prompt"
-      placeholder="A legendary vampire who rules a city of the dead..."
-    ></textarea>
+<main>
 
-    <div class="controls">
-      <button id="generate">Generate Card</button>
-    </div>
+<header>
+  <div class="eyebrow">Magic: The Gathering</div>
+  <h1>Card Lab</h1>
+  <div class="subtitle">
+    Describe what you're looking for. Find the cards that fit.
+  </div>
+</header>
 
-    <p id="status"></p>
+<form class="search" id="searchForm">
+  <input
+    id="query"
+    autocomplete="off"
+    placeholder="e.g. creatures that sacrifice themselves to draw cards"
+  >
+  <button>Search</button>
+</form>
 
-    <div id="result"></div>
+<div id="status"></div>
 
-    <footer>
-      Card generation powered by
-      <a href="https://github.com/forrestcoward/MTG-Card-Generator" target="_blank">
-        MTG Card Generator
-      </a>.
-    </footer>
-  </main>
+<section id="results"></section>
 
-  <script src="app.js"></script>
+<footer>
+  Card data and images provided by
+  <a href="https://scryfall.com" target="_blank">Scryfall</a>.
+</footer>
+
+</main>
+
+<script>
+const form = document.getElementById("searchForm");
+const query = document.getElementById("query");
+const status = document.getElementById("status");
+const results = document.getElementById("results");
+
+form.addEventListener("submit", search);
+
+async function search(event) {
+  event.preventDefault();
+
+  const q = query.value.trim();
+
+  if (!q) return;
+
+  status.textContent = "Searching...";
+  results.innerHTML = "";
+
+  try {
+    const response = await fetch(
+      "https://api.scryfall.com/cards/search?q=" +
+      encodeURIComponent(q)
+    );
+
+    if (!response.ok) {
+      throw new Error("Search failed: " + response.status);
+    }
+
+    const data = await response.json();
+
+    if (!data.data.length) {
+      status.textContent = "No cards found.";
+      results.innerHTML =
+        '<div class="empty">Try describing the card differently.</div>';
+      return;
+    }
+
+    status.textContent =
+      data.total_cards + " cards found";
+
+    results.innerHTML = data.data
+      .slice(0, 24)
+      .map(card => `
+        <article class="card"
+          onclick="window.open('${card.scryfall_uri}', '_blank')">
+
+          <img
+            src="${card.image_uris?.normal || ""}"
+            alt="${escapeHtml(card.name)}"
+            loading="lazy"
+          >
+
+          <div class="card-name">
+            ${escapeHtml(card.name)}
+          </div>
+
+          <div class="card-type">
+            ${escapeHtml(card.type_line || "")}
+          </div>
+
+        </article>
+      `)
+      .join("");
+
+  } catch (error) {
+    console.error(error);
+    status.textContent = "Something went wrong.";
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+</script>
+
 </body>
 </html>
