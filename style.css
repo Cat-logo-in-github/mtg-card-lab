@@ -3,13 +3,12 @@
 }
 
 :root {
-  --bg: #0b0b0e;
-  --panel: #15151a;
-  --panel2: #1d1c22;
+  --bg: #09090b;
+  --panel: #151519;
   --gold: #d4af67;
-  --text: #f4f0e8;
-  --muted: #92909a;
-  --line: #302e36;
+  --text: #f5f1e8;
+  --muted: #8f8c96;
+  --line: #302e35;
 }
 
 body {
@@ -17,21 +16,20 @@ body {
   min-height: 100vh;
   color: var(--text);
   background:
-    radial-gradient(circle at 50% -10%, #4b3a52 0, transparent 38%),
-    radial-gradient(circle at 10% 50%, #22233b 0, transparent 28%),
+    radial-gradient(circle at 50% -10%, #44334b, transparent 40%),
     var(--bg);
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 main {
-  width: min(1180px, 92%);
+  width: min(1150px, 92%);
   margin: auto;
-  padding: 72px 0 90px;
+  padding: 70px 0 80px;
 }
 
 header {
   text-align: center;
-  margin-bottom: 42px;
+  margin-bottom: 35px;
 }
 
 .eyebrow {
@@ -42,8 +40,8 @@ header {
 }
 
 h1 {
-  margin: 12px 0 8px;
-  font: 72px/0.95 Georgia, serif;
+  margin: 10px 0;
+  font: 72px Georgia, serif;
   letter-spacing: -3px;
 }
 
@@ -55,68 +53,84 @@ header p {
 .search-box {
   max-width: 850px;
   margin: auto;
-  padding: 20px;
-  background: #ffffff08;
+  padding: 18px;
   border: 1px solid var(--line);
   border-radius: 18px;
+  background: #ffffff08;
   box-shadow: 0 20px 70px #0008;
-  backdrop-filter: blur(12px);
 }
 
 textarea {
-  display: block;
   width: 100%;
-  height: 105px;
-  padding: 17px;
+  height: 100px;
+  padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 11px;
   outline: none;
-  background: #0e0e12;
+  background: #0d0d10;
   color: var(--text);
-  font: 16px/1.5 inherit;
+  font: 16px/1.5 system-ui;
   resize: vertical;
 }
 
 textarea:focus {
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px #d4af6718;
 }
 
-.search-row {
+.examples {
   display: flex;
-  gap: 10px;
-  margin-top: 12px;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
 }
 
-button {
+.examples button {
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.examples button:hover {
+  color: var(--text);
+  border-color: #666;
+}
+
+.actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.actions button {
   padding: 12px 20px;
   border: 0;
   border-radius: 10px;
   background: var(--gold);
-  color: #17130b;
+  color: #16120a;
   font-weight: 800;
   cursor: pointer;
 }
 
-button:hover {
-  filter: brightness(1.12);
-}
-
-button.secondary {
-  background: #29272f;
+.actions .secondary {
+  background: #29272e;
   color: #ddd;
 }
 
 #interpretation {
-  margin-top: 13px;
+  min-height: 18px;
+  margin-top: 12px;
   color: #77747e;
   font-size: 12px;
-  min-height: 18px;
 }
 
-.results-header {
-  margin: 38px 0 18px;
+#status {
+  min-height: 25px;
+  margin: 32px 0 18px;
   color: var(--muted);
+  text-align: center;
   font-size: 13px;
 }
 
@@ -127,19 +141,18 @@ button.secondary {
 }
 
 .card {
-  min-width: 0;
   cursor: pointer;
-  transition: transform .2s, filter .2s;
+  transition: transform .18s, filter .18s;
 }
 
 .card:hover {
-  transform: translateY(-7px);
+  transform: translateY(-6px);
   filter: brightness(1.08);
 }
 
 .card img {
-  width: 100%;
   display: block;
+  width: 100%;
   border-radius: 10px;
   box-shadow: 0 12px 30px #000b;
 }
@@ -152,7 +165,7 @@ button.secondary {
 
 .card-type {
   margin-top: 3px;
-  color: #77747e;
+  color: #77747d;
   font-size: 11px;
 }
 
@@ -164,9 +177,9 @@ button.secondary {
 }
 
 footer {
-  margin-top: 75px;
+  margin-top: 70px;
+  color: #55525b;
   text-align: center;
-  color: #56535c;
   font-size: 12px;
 }
 
@@ -177,70 +190,70 @@ footer a {
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 20px;
-  background: #000c;
+  background: #000d;
   backdrop-filter: blur(8px);
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
-.modal-card {
+.modal-inner {
   position: relative;
   display: flex;
-  gap: 28px;
-  align-items: flex-start;
-  max-width: 800px;
+  gap: 25px;
+  max-width: 760px;
   max-height: 90vh;
   padding: 25px;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel);
-  overflow: auto;
 }
 
-.modal-card img {
+.modal-inner img {
   width: 330px;
-  max-width: 48%;
-  border-radius: 13px;
-  box-shadow: 0 20px 50px #000;
+  height: fit-content;
+  border-radius: 12px;
 }
 
-#modal-info {
-  max-width: 360px;
-  line-height: 1.55;
+#modal-details {
+  max-width: 340px;
+  line-height: 1.5;
 }
 
-#modal-info h2 {
-  margin-top: 20px;
-  font-family: Georgia, serif;
+#modal-details h2 {
+  margin-top: 10px;
+  font: 28px Georgia, serif;
 }
 
-#modal-info .label {
+.detail-label {
   margin-top: 18px;
   color: var(--gold);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  text-transform: uppercase;
   letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .close {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 9px;
+  right: 9px;
   z-index: 2;
-  width: 36px;
-  height: 36px;
+  width: 35px;
+  height: 35px;
   padding: 0;
+  border: 0;
   border-radius: 50%;
-  background: #0009;
+  background: #000b;
   color: white;
-  font-size: 25px;
+  font-size: 24px;
+  cursor: pointer;
 }
 
 @media (max-width: 900px) {
@@ -258,7 +271,7 @@ footer a {
     font-size: 52px;
   }
 
-  .search-row {
+  .actions {
     flex-direction: column;
   }
 
@@ -267,13 +280,12 @@ footer a {
     gap: 14px;
   }
 
-  .modal-card {
+  .modal-inner {
     flex-direction: column;
     align-items: center;
   }
 
-  .modal-card img {
-    max-width: 80%;
-    width: 300px;
+  .modal-inner img {
+    width: 280px;
   }
 }
