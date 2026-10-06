@@ -1614,23 +1614,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   // SCRYFALL SEARCH
   // ============================================================
-  //
-  // Fetches ALL pages returned by Scryfall.
-  //
-  // The old version stopped after 2 extra pages:
-  //
-  //     while (next && pages < 2)
-  //
-  // This version continues until Scryfall says there are no
-  // more pages.
-  //
-  // ============================================================
 
   async function scryfallSearch(query) {
 
     const url =
       `${API}/cards/search?q=${encodeURIComponent(query)}`;
-
 
     const response =
       await fetch(
@@ -1644,7 +1632,6 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
 
-    // Scryfall uses 404 when a search has no results.
     if (
       response.status === 404
     ) {
@@ -1669,46 +1656,31 @@ document.addEventListener("DOMContentLoaded", () => {
       data.data || [];
 
 
-    // ----------------------------------------------------------
-    // Follow EVERY pagination page.
-    // ----------------------------------------------------------
-
+    /*
+     * Follow a small number of pagination pages.
+     *
+     * This makes broad searches substantially better without
+     * turning the demo into a huge crawler.
+     */
     let next =
       data.has_more
         ? data.next_page
         : null;
 
 
-    let pageNumber = 1;
+    let pages = 0;
 
 
-    while (next) {
-
-      console.log(
-        `Loading Scryfall results page ${pageNumber + 1}...`
-      );
-
+    while (
+      next &&
+      pages < 2
+    ) {
 
       const nextResponse =
-        await fetch(
-          next,
-          {
-            headers: {
-              "Accept":
-                "application/json"
-            }
-          }
-        );
+        await fetch(next);
 
 
-      if (!nextResponse.ok) {
-
-        console.warn(
-          `Scryfall pagination stopped at page ${pageNumber + 1}.`
-        );
-
-        break;
-      }
+      if (!nextResponse.ok) break;
 
 
       const nextData =
@@ -1727,26 +1699,13 @@ document.addEventListener("DOMContentLoaded", () => {
           : null;
 
 
-      pageNumber++;
-
-
-      // --------------------------------------------------------
-      // Update status while a very large search is downloading.
-      // --------------------------------------------------------
-
-      setStatus(
-        `Loading cards… ${cards.length.toLocaleString()} found`
-      );
+      pages++;
     }
-
-
-    console.log(
-      `Scryfall search complete: ${cards.length.toLocaleString()} cards`
-    );
 
 
     return cards;
   }
+
 
   // ============================================================
   // REFERENCES
@@ -2817,17 +2776,49 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   // RESULTS UI
   // ============================================================
+  //
+  // Only the TOP 500 ranked cards are kept for display.
+  // Pagination then displays 30 cards per page.
+  //
+  // This also defines renderCard(), which was missing and caused:
+  //
+  //     ReferenceError: renderCard is not defined
+  //
+  // ============================================================
 
-  // Number of cards displayed on each page.
+  const MAX_DISPLAY_RESULTS = 500;
   const CARDS_PER_PAGE = 30;
 
-  // Current page being viewed.
   let currentPage = 1;
 
 
+  // ============================================================
+  // RENDER RESULTS
+  // ============================================================
+
   function renderResults(page = 1) {
 
-    // Make sure the page number is valid.
+    // ----------------------------------------------------------
+    // IMPORTANT:
+    // Only keep the best 500 cards for the UI.
+    //
+    // currentCards is already sorted by score in runSearch().
+    // ----------------------------------------------------------
+
+    if (currentCards.length > MAX_DISPLAY_RESULTS) {
+
+      currentCards =
+        currentCards.slice(
+          0,
+          MAX_DISPLAY_RESULTS
+        );
+    }
+
+
+    // ----------------------------------------------------------
+    // Calculate pagination.
+    // ----------------------------------------------------------
+
     const totalPages =
       Math.max(
         1,
@@ -2837,30 +2828,70 @@ document.addEventListener("DOMContentLoaded", () => {
         )
       );
 
+
     currentPage =
       Math.min(
-        Math.max(1, page),
+        Math.max(
+          1,
+          page
+        ),
         totalPages
       );
 
 
     // ----------------------------------------------------------
-    // Get only the cards for this page.
+    // Remove old pagination before rendering.
+    // ----------------------------------------------------------
+
+    const oldPagination =
+      document.getElementById(
+        "mtg-pagination"
+      );
+
+
+    if (oldPagination) {
+
+      oldPagination.remove();
+    }
+
+
+    // ----------------------------------------------------------
+    // Cards for current page.
     // ----------------------------------------------------------
 
     const start =
       (currentPage - 1) *
       CARDS_PER_PAGE;
 
+
     const end =
-      start +
-      CARDS_PER_PAGE;
+      Math.min(
+        start + CARDS_PER_PAGE,
+        currentCards.length
+      );
+
 
     const visible =
       currentCards.slice(
         start,
         end
       );
+
+
+    // ----------------------------------------------------------
+    // Empty state.
+    // ----------------------------------------------------------
+
+    if (!visible.length) {
+
+      results.innerHTML = `
+        <div class="empty">
+          <p>No cards to display.</p>
+        </div>
+      `;
+
+      return;
+    }
 
 
     // ----------------------------------------------------------
@@ -2873,10 +2904,6 @@ document.addEventListener("DOMContentLoaded", () => {
           (card, index) =>
             renderCard(
               card,
-
-              // IMPORTANT:
-              // Use the actual index in currentCards,
-              // not the index within this page.
               start + index
             )
         )
@@ -2891,30 +2918,444 @@ document.addEventListener("DOMContentLoaded", () => {
       .querySelectorAll(
         "[data-card-index]"
       )
-      .forEach(element => {
+      .forEach(
+        element => {
 
-        element.addEventListener(
-          "click",
-          () => {
+          element.addEventListener(
+            "click",
+            event => {
 
-            openCard(
-              Number(
-                element.dataset.cardIndex
-              )
-            );
-          }
-        );
-      });
+              // Don't intercept clicks on links/buttons
+              // inside a card.
+
+              if (
+                event.target.closest(
+                  "a, button"
+                )
+              ) {
+                return;
+              }
+
+
+              openCard(
+                Number(
+                  element.dataset.cardIndex
+                )
+              );
+            }
+          );
+        }
+      );
 
 
     // ----------------------------------------------------------
-    // Add pagination underneath the cards.
+    // Pagination.
     // ----------------------------------------------------------
 
     renderPagination(
       currentPage,
       totalPages
     );
+  }
+
+
+  // ============================================================
+  // CARD RENDERER
+  // ============================================================
+
+  function renderCard(
+    card,
+    index
+  ) {
+
+    const match =
+      card._match || {
+        total: 0,
+        reasons: []
+      };
+
+
+    const image =
+      card.image_uris?.normal ||
+      card.image_uris?.large ||
+      card.card_faces?.[0]
+        ?.image_uris?.normal ||
+      card.card_faces?.[0]
+        ?.image_uris?.large ||
+      "";
+
+
+    const name =
+      escapeHtml(
+        card.name || "Unknown card"
+      );
+
+
+    const mana =
+      escapeHtml(
+        card.mana_cost || ""
+      );
+
+
+    const typeLine =
+      escapeHtml(
+        card.type_line || ""
+      );
+
+
+    const oracle =
+      escapeHtml(
+        card.oracle_text || ""
+      );
+
+
+    const setName =
+      escapeHtml(
+        card.set_name || ""
+      );
+
+
+    const rarity =
+      escapeHtml(
+        card.rarity || ""
+      );
+
+
+    const score =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          Number(match.total) || 0
+        )
+      );
+
+
+    const reasons =
+      Array.isArray(
+        match.reasons
+      )
+        ? match.reasons
+        : [];
+
+
+    // ----------------------------------------------------------
+    // Image
+    // ----------------------------------------------------------
+
+    const imageHtml =
+      image
+        ? `
+          <img
+            src="${escapeHtml(image)}"
+            alt="${name}"
+            loading="lazy"
+            draggable="false"
+            style="
+              width:100%;
+              display:block;
+              border-radius:10px;
+              background:#18161d;
+            "
+          >
+        `
+        : `
+          <div
+            style="
+              aspect-ratio:488/680;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              padding:20px;
+              text-align:center;
+              background:#18161d;
+              border-radius:10px;
+              color:#77737e;
+              font-size:12px;
+            "
+          >
+            No image
+          </div>
+        `;
+
+
+    // ----------------------------------------------------------
+    // Match reasons
+    // ----------------------------------------------------------
+
+    const reasonsHtml =
+      reasons.length
+        ? `
+          <div
+            style="
+              margin-top:10px;
+              color:#aaa7b0;
+              font-size:10px;
+              line-height:1.5;
+            "
+          >
+            ${reasons
+              .slice(0, 3)
+              .map(
+                reason =>
+                  `<div>✓ ${escapeHtml(reason)}</div>`
+              )
+              .join("")}
+          </div>
+        `
+        : "";
+
+
+    // ----------------------------------------------------------
+    // Oracle text
+    // ----------------------------------------------------------
+
+    const oracleHtml =
+      oracle
+        ? `
+          <div
+            style="
+              margin-top:10px;
+              color:#aaa7b0;
+              font-size:11px;
+              line-height:1.45;
+              display:-webkit-box;
+              -webkit-line-clamp:4;
+              -webkit-box-orient:vertical;
+              overflow:hidden;
+            "
+          >
+            ${oracle}
+          </div>
+        `
+        : "";
+
+
+    // ----------------------------------------------------------
+    // Card HTML
+    // ----------------------------------------------------------
+
+    return `
+      <article
+        class="mtg-card-result"
+        data-card-index="${index}"
+        tabindex="0"
+        role="button"
+        aria-label="View ${name}"
+        style="
+          position:relative;
+          display:flex;
+          flex-direction:column;
+          min-width:0;
+          background:#111014;
+          border:1px solid #302e35;
+          border-radius:12px;
+          overflow:hidden;
+          cursor:pointer;
+          transition:
+            transform .15s ease,
+            border-color .15s ease,
+            box-shadow .15s ease;
+        "
+        onmouseenter="
+          this.style.transform='translateY(-3px)';
+          this.style.borderColor='#d4af67';
+          this.style.boxShadow='0 8px 25px rgba(0,0,0,.35)';
+        "
+        onmouseleave="
+          this.style.transform='translateY(0)';
+          this.style.borderColor='#302e35';
+          this.style.boxShadow='none';
+        "
+        onkeydown="
+          if(event.key==='Enter' || event.key===' '){
+            event.preventDefault();
+            this.click();
+          }
+        "
+      >
+
+        <!-- CARD IMAGE -->
+
+        <div
+          style="
+            position:relative;
+            line-height:0;
+          "
+        >
+
+          ${imageHtml}
+
+
+          <!-- MATCH BADGE -->
+
+          <div
+            style="
+              position:absolute;
+              top:8px;
+              right:8px;
+              min-width:42px;
+              padding:5px 7px;
+              border-radius:7px;
+              background:rgba(9,9,12,.92);
+              border:1px solid #d4af67;
+              color:#d4af67;
+              font-size:11px;
+              font-weight:700;
+              line-height:1;
+              text-align:center;
+              box-shadow:0 2px 8px rgba(0,0,0,.4);
+            "
+          >
+            ${score}%
+          </div>
+
+        </div>
+
+
+        <!-- CARD INFORMATION -->
+
+        <div
+          style="
+            display:flex;
+            flex-direction:column;
+            flex:1;
+            padding:12px;
+          "
+        >
+
+          <!-- NAME -->
+
+          <div
+            style="
+              display:flex;
+              align-items:flex-start;
+              justify-content:space-between;
+              gap:8px;
+            "
+          >
+
+            <h3
+              style="
+                margin:0;
+                color:#eeeaf0;
+                font-size:14px;
+                line-height:1.3;
+                font-weight:700;
+              "
+            >
+              ${name}
+            </h3>
+
+          </div>
+
+
+          <!-- MANA -->
+
+          ${
+            mana
+              ? `
+                <div
+                  style="
+                    margin-top:5px;
+                    color:#d4af67;
+                    font-size:11px;
+                    font-weight:600;
+                  "
+                >
+                  ${mana}
+                </div>
+              `
+              : ""
+          }
+
+
+          <!-- TYPE -->
+
+          ${
+            typeLine
+              ? `
+                <div
+                  style="
+                    margin-top:6px;
+                    color:#77737e;
+                    font-size:10px;
+                    line-height:1.35;
+                  "
+                >
+                  ${typeLine}
+                </div>
+              `
+              : ""
+          }
+
+
+          ${oracleHtml}
+
+
+          <!-- REASONS -->
+
+          ${reasonsHtml}
+
+
+          <!-- FOOTER -->
+
+          <div
+            style="
+              display:flex;
+              align-items:center;
+              justify-content:space-between;
+              gap:8px;
+              margin-top:auto;
+              padding-top:12px;
+            "
+          >
+
+            ${
+              setName
+                ? `
+                  <span
+                    style="
+                      min-width:0;
+                      overflow:hidden;
+                      text-overflow:ellipsis;
+                      white-space:nowrap;
+                      color:#77737e;
+                      font-size:9px;
+                    "
+                    title="${setName}"
+                  >
+                    ${setName}
+                  </span>
+                `
+                : `
+                  <span></span>
+                `
+            }
+
+
+            ${
+              rarity
+                ? `
+                  <span
+                    style="
+                      color:#77737e;
+                      font-size:9px;
+                      text-transform:capitalize;
+                    "
+                  >
+                    ${rarity}
+                  </span>
+                `
+                : ""
+            }
+
+          </div>
+
+        </div>
+
+      </article>
+    `;
   }
 
 
@@ -2927,19 +3368,20 @@ document.addEventListener("DOMContentLoaded", () => {
     totalPages
   ) {
 
-    // Remove an old pagination element if one exists.
     const oldPagination =
       document.getElementById(
         "mtg-pagination"
       );
 
+
     if (oldPagination) {
+
       oldPagination.remove();
     }
 
 
-    // If there is only one page, there is nothing to paginate.
     if (totalPages <= 1) {
+
       return;
     }
 
@@ -2948,6 +3390,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.createElement(
         "div"
       );
+
 
     pagination.id =
       "mtg-pagination";
@@ -2965,7 +3408,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     // ----------------------------------------------------------
-    // Previous button
+    // Previous
     // ----------------------------------------------------------
 
     const previous =
@@ -2973,6 +3416,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "‹",
         page > 1,
         () => {
+
           renderResults(
             page - 1
           );
@@ -2981,8 +3425,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       );
 
+
     previous.title =
       "Previous page";
+
 
     pagination.appendChild(
       previous
@@ -2991,11 +3437,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ----------------------------------------------------------
     // Page numbers
-    //
-    // Instead of displaying hundreds of buttons, show something
-    // similar to Google:
-    //
-    // 1 2 3 4 5 ... 20
     // ----------------------------------------------------------
 
     const pages =
@@ -3008,24 +3449,30 @@ document.addEventListener("DOMContentLoaded", () => {
     pages.forEach(
       pageNumber => {
 
-        if (pageNumber === "...") {
+        if (
+          pageNumber === "..."
+        ) {
 
           const dots =
             document.createElement(
               "span"
             );
 
+
           dots.textContent =
             "…";
+
 
           dots.style.cssText = `
             color:#77737e;
             padding:8px 5px;
           `;
 
+
           pagination.appendChild(
             dots
           );
+
 
           return;
         }
@@ -3072,7 +3519,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     // ----------------------------------------------------------
-    // Next button
+    // Next
     // ----------------------------------------------------------
 
     const next =
@@ -3089,8 +3536,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       );
 
+
     next.title =
       "Next page";
+
 
     pagination.appendChild(
       next
@@ -3098,12 +3547,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     // ----------------------------------------------------------
-    // Page information
+    // Result information
     // ----------------------------------------------------------
 
     const start =
       ((page - 1) *
         CARDS_PER_PAGE) + 1;
+
 
     const end =
       Math.min(
@@ -3117,6 +3567,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "div"
       );
 
+
     info.style.cssText = `
       width:100%;
       text-align:center;
@@ -3125,17 +3576,24 @@ document.addEventListener("DOMContentLoaded", () => {
       font-size:11px;
     `;
 
+
     info.textContent =
-      `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${currentCards.length.toLocaleString()} cards`;
+      `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${currentCards.length.toLocaleString()} top results`;
+
 
     pagination.appendChild(
       info
     );
 
 
-    results.parentNode.appendChild(
-      pagination
-    );
+    if (
+      results.parentNode
+    ) {
+
+      results.parentNode.appendChild(
+        pagination
+      );
+    }
   }
 
 
@@ -3148,7 +3606,6 @@ document.addEventListener("DOMContentLoaded", () => {
     total
   ) {
 
-    // For small result sets, show every page.
     if (total <= 9) {
 
       return Array.from(
@@ -3163,15 +3620,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const pages = [];
 
 
-    // Always show page 1.
     pages.push(1);
 
 
-    // ----------------------------------------------------------
-    // Near beginning
-    // ----------------------------------------------------------
+    // Near beginning.
 
-    if (current <= 4) {
+    if (
+      current <= 4
+    ) {
 
       pages.push(2);
       pages.push(3);
@@ -3184,9 +3640,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
 
-    // ----------------------------------------------------------
-    // Near end
-    // ----------------------------------------------------------
+    // Near end.
 
     if (
       current >=
@@ -3194,51 +3648,23 @@ document.addEventListener("DOMContentLoaded", () => {
     ) {
 
       pages.push("...");
-
-      pages.push(
-        total - 4
-      );
-
-      pages.push(
-        total - 3
-      );
-
-      pages.push(
-        total - 2
-      );
-
-      pages.push(
-        total - 1
-      );
-
-      pages.push(
-        total
-      );
+      pages.push(total - 4);
+      pages.push(total - 3);
+      pages.push(total - 2);
+      pages.push(total - 1);
+      pages.push(total);
 
       return pages;
     }
 
 
-    // ----------------------------------------------------------
-    // Middle
-    // ----------------------------------------------------------
+    // Middle.
 
     pages.push("...");
-
-    pages.push(
-      current - 1
-    );
-
-    pages.push(
-      current
-    );
-
-    pages.push(
-      current + 1
-    );
-
+    pages.push(current - 1);
+    pages.push(current);
+    pages.push(current + 1);
     pages.push("...");
-
     pages.push(total);
 
 
@@ -3261,11 +3687,14 @@ document.addEventListener("DOMContentLoaded", () => {
         "button"
       );
 
+
     button.type =
       "button";
 
+
     button.textContent =
       label;
+
 
     button.style.cssText = `
       min-width:36px;
@@ -3351,6 +3780,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function scrollResultsToTop() {
 
     if (!results) {
+
       return;
     }
 
