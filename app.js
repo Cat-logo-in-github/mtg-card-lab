@@ -64,6 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   let currentCards = [];
+  let currentCardIndex = -1;
+
 
 
   // ============================================================
@@ -139,6 +141,74 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  // ============================================================
+  // KEYBOARD CARD NAVIGATION
+  // ============================================================
+
+  document.addEventListener("keydown", event => {
+
+    if (
+      !modal ||
+      modal.classList.contains("hidden")
+    ) {
+      return;
+    }
+
+    // Don't interfere with typing.
+    if (
+      event.target.matches(
+        "input, textarea, select"
+      ) ||
+      event.target.isContentEditable
+    ) {
+      return;
+    }
+
+    // Escape closes the modal.
+    if (event.key === "Escape") {
+
+      event.preventDefault();
+
+      modal.classList.add("hidden");
+
+      return;
+    }
+
+    // Next card.
+    if (event.key === "ArrowRight") {
+
+      event.preventDefault();
+
+      if (
+        currentCardIndex <
+        currentCards.length - 1
+      ) {
+
+        openCard(
+          currentCardIndex + 1
+        );
+      }
+
+      return;
+    }
+
+    // Previous card.
+    if (event.key === "ArrowLeft") {
+
+      event.preventDefault();
+
+      if (currentCardIndex > 0) {
+
+        openCard(
+          currentCardIndex - 1
+        );
+      }
+
+      return;
+    }
+  });
+
 
 
   // ============================================================
@@ -3810,6 +3880,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!card || !modal) return;
 
+    currentCardIndex = index;
+
 
     const image =
       card.image_uris?.large ||
@@ -3986,7 +4058,93 @@ document.addEventListener("DOMContentLoaded", () => {
     modal.classList.remove(
       "hidden"
     );
+
+    updateCardNavigation();
   }
+
+  // ============================================================
+  // MOBILE CARD NAVIGATION BUTTONS
+  // ============================================================
+
+  function updateCardNavigation() {
+
+    const previousButton =
+      document.getElementById(
+        "previous-card"
+      );
+
+    const nextButton =
+      document.getElementById(
+        "next-card"
+      );
+
+    if (!previousButton || !nextButton) {
+      return;
+    }
+
+    // Disable Previous on the first card.
+    previousButton.disabled =
+      currentCardIndex <= 0;
+
+    // Disable Next on the last card.
+    nextButton.disabled =
+      currentCardIndex >=
+      currentCards.length - 1;
+
+    previousButton.style.opacity =
+      previousButton.disabled
+        ? "0.35"
+        : "1";
+
+    nextButton.style.opacity =
+      nextButton.disabled
+        ? "0.35"
+        : "1";
+  }
+
+
+  // Previous button.
+  document.addEventListener("click", event => {
+
+    if (
+      event.target.closest(
+        "#previous-card"
+      )
+    ) {
+
+      if (
+        currentCardIndex > 0
+      ) {
+
+        openCard(
+          currentCardIndex - 1
+        );
+      }
+    }
+  });
+
+
+  // Next button.
+  document.addEventListener("click", event => {
+
+    if (
+      event.target.closest(
+        "#next-card"
+      )
+    ) {
+
+      if (
+        currentCardIndex <
+        currentCards.length - 1
+      ) {
+
+        openCard(
+          currentCardIndex + 1
+        );
+      }
+    }
+  });
+
 
 
   function detail(
