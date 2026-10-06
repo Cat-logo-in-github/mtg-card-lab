@@ -187,105 +187,152 @@ footer a {
   color: #817b88;
 }
 
-.modal {
+
+/* ============================================================
+   CARD MODAL
+   ============================================================ */
+
+#modal {
   position: fixed;
   inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: #000d;
-  backdrop-filter: blur(8px);
-}
+  z-index: 99999;
 
-.hidden {
-  display: none !important;
-}
-
-.modal-inner {
-  position: relative;
   display: flex;
-  gap: 25px;
-  max-width: 760px;
-  max-height: 90vh;
-  padding: 25px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+  box-sizing: border-box;
+
+  background: rgba(0, 0, 0, 0.82);
+
+  overflow-y: auto;
 }
 
-.modal-inner img {
-  width: 330px;
-  height: fit-content;
+/* Hidden modal */
+#modal.hidden {
+  display: none;
+}
+
+/* Modal box */
+#modal .modal-content {
+  position: relative;
+
+  width: min(900px, 100%);
+  max-height: 90vh;
+
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  gap: 24px;
+
+  padding: 24px;
+
+  box-sizing: border-box;
+
+  background: #18161d;
+  border: 1px solid #302e35;
+  border-radius: 16px;
+
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.7);
+
+  overflow-y: auto;
+}
+
+/* Card image inside modal */
+#modal-image {
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+
+  display: block;
+
   border-radius: 12px;
 }
 
+/* Details */
 #modal-details {
-  max-width: 340px;
-  line-height: 1.5;
+  min-width: 0;
 }
 
-#modal-details h2 {
-  margin-top: 10px;
-  font: 28px Georgia, serif;
-}
-
-.detail-label {
-  margin-top: 18px;
-  color: var(--gold);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.close {
+/* Close button */
+#close {
   position: absolute;
-  top: 9px;
-  right: 9px;
-  z-index: 2;
-  width: 35px;
-  height: 35px;
-  padding: 0;
-  border: 0;
+  top: 12px;
+  right: 12px;
+
+  z-index: 10;
+
+  width: 38px;
+  height: 38px;
+
+  border: 1px solid #302e35;
   border-radius: 50%;
-  background: #000b;
-  color: white;
+
+  background: rgba(17, 16, 20, 0.95);
+  color: #eeeaf0;
+
   font-size: 24px;
+  line-height: 1;
+
   cursor: pointer;
 }
 
-@media (max-width: 900px) {
-  #results {
-    grid-template-columns: repeat(4, 1fr);
-  }
+#close:hover {
+  color: #d4af67;
+  border-color: #d4af67;
 }
 
-@media (max-width: 600px) {
-  main {
-    padding-top: 45px;
+/* Navigation buttons */
+#modal-navigation {
+  grid-column: 1 / -1;
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+
+  #modal {
+    padding: 10px;
+    align-items: flex-start;
   }
 
-  h1 {
-    font-size: 52px;
-  }
+  #modal .modal-content {
+    width: 100%;
+    max-height: 95vh;
 
-  .actions {
+    display: flex;
     flex-direction: column;
-  }
 
-  #results {
-    grid-template-columns: repeat(2, 1fr);
     gap: 14px;
+
+    padding: 16px;
+
+    border-radius: 14px;
   }
 
-  .modal-inner {
-    flex-direction: column;
-    align-items: center;
+  #modal-image {
+    width: 100%;
+    max-width: 360px;
+
+    margin: 0 auto;
   }
 
-  .modal-inner img {
-    width: 280px;
+  #modal-navigation {
+    display: flex !important;
+
+    position: sticky;
+    bottom: 0;
+
+    z-index: 5;
+
+    padding-top: 10px;
+
+    background: #18161d;
+  }
+
+  #previous-card,
+  #next-card {
+    min-height: 48px;
+    font-size: 14px;
   }
 }
