@@ -1614,11 +1614,23 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================================
   // SCRYFALL SEARCH
   // ============================================================
+  //
+  // Fetches ALL pages returned by Scryfall.
+  //
+  // The old version stopped after 2 extra pages:
+  //
+  //     while (next && pages < 2)
+  //
+  // This version continues until Scryfall says there are no
+  // more pages.
+  //
+  // ============================================================
 
   async function scryfallSearch(query) {
 
     const url =
       `${API}/cards/search?q=${encodeURIComponent(query)}`;
+
 
     const response =
       await fetch(
@@ -1632,6 +1644,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
 
+    // Scryfall uses 404 when a search has no results.
     if (
       response.status === 404
     ) {
@@ -1656,31 +1669,46 @@ document.addEventListener("DOMContentLoaded", () => {
       data.data || [];
 
 
-    /*
-     * Follow a small number of pagination pages.
-     *
-     * This makes broad searches substantially better without
-     * turning the demo into a huge crawler.
-     */
+    // ----------------------------------------------------------
+    // Follow EVERY pagination page.
+    // ----------------------------------------------------------
+
     let next =
       data.has_more
         ? data.next_page
         : null;
 
 
-    let pages = 0;
+    let pageNumber = 1;
 
 
-    while (
-      next &&
-      pages < 2
-    ) {
+    while (next) {
+
+      console.log(
+        `Loading Scryfall results page ${pageNumber + 1}...`
+      );
+
 
       const nextResponse =
-        await fetch(next);
+        await fetch(
+          next,
+          {
+            headers: {
+              "Accept":
+                "application/json"
+            }
+          }
+        );
 
 
-      if (!nextResponse.ok) break;
+      if (!nextResponse.ok) {
+
+        console.warn(
+          `Scryfall pagination stopped at page ${pageNumber + 1}.`
+        );
+
+        break;
+      }
 
 
       const nextData =
@@ -1699,13 +1727,26 @@ document.addEventListener("DOMContentLoaded", () => {
           : null;
 
 
-      pages++;
+      pageNumber++;
+
+
+      // --------------------------------------------------------
+      // Update status while a very large search is downloading.
+      // --------------------------------------------------------
+
+      setStatus(
+        `Loading cards… ${cards.length.toLocaleString()} found`
+      );
     }
+
+
+    console.log(
+      `Scryfall search complete: ${cards.length.toLocaleString()} cards`
+    );
 
 
     return cards;
   }
-
 
   // ============================================================
   // REFERENCES
@@ -2777,14 +2818,54 @@ document.addEventListener("DOMContentLoaded", () => {
   // RESULTS UI
   // ============================================================
 
-  function renderResults() {
+  // Number of cards displayed on each page.
+  const CARDS_PER_PAGE = 30;
+
+  // Current page being viewed.
+  let currentPage = 1;
+
+
+  function renderResults(page = 1) {
+
+    // Make sure the page number is valid.
+    const totalPages =
+      Math.max(
+        1,
+        Math.ceil(
+          currentCards.length /
+          CARDS_PER_PAGE
+        )
+      );
+
+    currentPage =
+      Math.min(
+        Math.max(1, page),
+        totalPages
+      );
+
+
+    // ----------------------------------------------------------
+    // Get only the cards for this page.
+    // ----------------------------------------------------------
+
+    const start =
+      (currentPage - 1) *
+      CARDS_PER_PAGE;
+
+    const end =
+      start +
+      CARDS_PER_PAGE;
 
     const visible =
       currentCards.slice(
-        0,
-        30
+        start,
+        end
       );
 
+
+    // ----------------------------------------------------------
+    // Render cards.
+    // ----------------------------------------------------------
 
     results.innerHTML =
       visible
@@ -2792,11 +2873,19 @@ document.addEventListener("DOMContentLoaded", () => {
           (card, index) =>
             renderCard(
               card,
-              index
+
+              // IMPORTANT:
+              // Use the actual index in currentCards,
+              // not the index within this page.
+              start + index
             )
         )
         .join("");
 
+
+    // ----------------------------------------------------------
+    // Card click handlers.
+    // ----------------------------------------------------------
 
     results
       .querySelectorAll(
@@ -2816,148 +2905,467 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         );
       });
+
+
+    // ----------------------------------------------------------
+    // Add pagination underneath the cards.
+    // ----------------------------------------------------------
+
+    renderPagination(
+      currentPage,
+      totalPages
+    );
   }
 
 
-  function renderCard(
-    card,
-    index
+  // ============================================================
+  // PAGINATION
+  // ============================================================
+
+  function renderPagination(
+    page,
+    totalPages
   ) {
 
-    const image =
-      card.image_uris?.normal ||
-      card.card_faces?.[0]
-        ?.image_uris?.normal;
+    // Remove an old pagination element if one exists.
+    const oldPagination =
+      document.getElementById(
+        "mtg-pagination"
+      );
 
-
-    if (!image) {
-      return "";
+    if (oldPagination) {
+      oldPagination.remove();
     }
 
 
-    const match =
-      card._match || {
-        total: 0,
-        reasons: []
-      };
+    // If there is only one page, there is nothing to paginate.
+    if (totalPages <= 1) {
+      return;
+    }
 
 
-    const scoreColor =
-      match.total >= 80
-        ? "#67d391"
-        : match.total >= 60
-          ? "#d4af67"
-          : match.total >= 40
-            ? "#d69a58"
-            : "#88848f";
+    const pagination =
+      document.createElement(
+        "div"
+      );
+
+    pagination.id =
+      "mtg-pagination";
 
 
-    return `
-      <article
-        class="card"
-        data-card-index="${index}"
-        style="cursor:pointer;"
-      >
-
-        <img
-          src="${escapeHtml(image)}"
-          alt="${escapeHtml(card.name)}"
-          loading="lazy"
-        >
-
-        <div
-          class="match-score"
-          style="margin-top:8px;"
-        >
-
-          <div
-            style="
-              display:flex;
-              justify-content:space-between;
-              align-items:center;
-              margin-bottom:5px;
-            "
-          >
-
-            <span
-              style="
-                color:#8f8b95;
-                font-size:10px;
-                letter-spacing:.08em;
-              "
-            >
-              MATCH
-            </span>
-
-            <strong
-              style="
-                color:${scoreColor};
-                font-size:12px;
-              "
-            >
-              ${match.total}%
-            </strong>
-
-          </div>
-
-
-          <div
-            style="
-              height:4px;
-              background:#242229;
-              border-radius:99px;
-              overflow:hidden;
-            "
-          >
-
-            <div
-              style="
-                width:${match.total}%;
-                height:100%;
-                background:${scoreColor};
-                border-radius:99px;
-              "
-            ></div>
-
-          </div>
-
-
-          ${
-            match.reasons.length
-              ? `
-                <div
-                  style="
-                    margin-top:6px;
-                    color:#77737e;
-                    font-size:10px;
-                    line-height:1.5;
-                  "
-                >
-                  ${match.reasons
-                    .slice(0, 2)
-                    .map(
-                      reason =>
-                        `<div>✓ ${escapeHtml(reason)}</div>`
-                    )
-                    .join("")}
-                </div>
-              `
-              : ""
-          }
-
-        </div>
-
-
-        <div class="card-name">
-          ${escapeHtml(card.name)}
-        </div>
-
-        <div class="card-type">
-          ${escapeHtml(card.type_line || "")}
-        </div>
-
-      </article>
+    pagination.style.cssText = `
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:center;
+      align-items:center;
+      gap:6px;
+      margin:30px 0 50px;
+      padding:15px;
     `;
+
+
+    // ----------------------------------------------------------
+    // Previous button
+    // ----------------------------------------------------------
+
+    const previous =
+      createPageButton(
+        "‹",
+        page > 1,
+        () => {
+          renderResults(
+            page - 1
+          );
+
+          scrollResultsToTop();
+        }
+      );
+
+    previous.title =
+      "Previous page";
+
+    pagination.appendChild(
+      previous
+    );
+
+
+    // ----------------------------------------------------------
+    // Page numbers
+    //
+    // Instead of displaying hundreds of buttons, show something
+    // similar to Google:
+    //
+    // 1 2 3 4 5 ... 20
+    // ----------------------------------------------------------
+
+    const pages =
+      getPageNumbers(
+        page,
+        totalPages
+      );
+
+
+    pages.forEach(
+      pageNumber => {
+
+        if (pageNumber === "...") {
+
+          const dots =
+            document.createElement(
+              "span"
+            );
+
+          dots.textContent =
+            "…";
+
+          dots.style.cssText = `
+            color:#77737e;
+            padding:8px 5px;
+          `;
+
+          pagination.appendChild(
+            dots
+          );
+
+          return;
+        }
+
+
+        const button =
+          createPageButton(
+            String(pageNumber),
+            true,
+            () => {
+
+              renderResults(
+                pageNumber
+              );
+
+              scrollResultsToTop();
+            }
+          );
+
+
+        if (
+          pageNumber === page
+        ) {
+
+          button.style.background =
+            "#d4af67";
+
+          button.style.color =
+            "#111014";
+
+          button.style.borderColor =
+            "#d4af67";
+
+          button.style.fontWeight =
+            "700";
+        }
+
+
+        pagination.appendChild(
+          button
+        );
+      }
+    );
+
+
+    // ----------------------------------------------------------
+    // Next button
+    // ----------------------------------------------------------
+
+    const next =
+      createPageButton(
+        "›",
+        page < totalPages,
+        () => {
+
+          renderResults(
+            page + 1
+          );
+
+          scrollResultsToTop();
+        }
+      );
+
+    next.title =
+      "Next page";
+
+    pagination.appendChild(
+      next
+    );
+
+
+    // ----------------------------------------------------------
+    // Page information
+    // ----------------------------------------------------------
+
+    const start =
+      ((page - 1) *
+        CARDS_PER_PAGE) + 1;
+
+    const end =
+      Math.min(
+        page * CARDS_PER_PAGE,
+        currentCards.length
+      );
+
+
+    const info =
+      document.createElement(
+        "div"
+      );
+
+    info.style.cssText = `
+      width:100%;
+      text-align:center;
+      margin-top:10px;
+      color:#77737e;
+      font-size:11px;
+    `;
+
+    info.textContent =
+      `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${currentCards.length.toLocaleString()} cards`;
+
+    pagination.appendChild(
+      info
+    );
+
+
+    results.parentNode.appendChild(
+      pagination
+    );
+  }
+
+
+  // ============================================================
+  // PAGE NUMBER GENERATOR
+  // ============================================================
+
+  function getPageNumbers(
+    current,
+    total
+  ) {
+
+    // For small result sets, show every page.
+    if (total <= 9) {
+
+      return Array.from(
+        {
+          length: total
+        },
+        (_, i) => i + 1
+      );
+    }
+
+
+    const pages = [];
+
+
+    // Always show page 1.
+    pages.push(1);
+
+
+    // ----------------------------------------------------------
+    // Near beginning
+    // ----------------------------------------------------------
+
+    if (current <= 4) {
+
+      pages.push(2);
+      pages.push(3);
+      pages.push(4);
+      pages.push(5);
+      pages.push("...");
+      pages.push(total);
+
+      return pages;
+    }
+
+
+    // ----------------------------------------------------------
+    // Near end
+    // ----------------------------------------------------------
+
+    if (
+      current >=
+      total - 3
+    ) {
+
+      pages.push("...");
+
+      pages.push(
+        total - 4
+      );
+
+      pages.push(
+        total - 3
+      );
+
+      pages.push(
+        total - 2
+      );
+
+      pages.push(
+        total - 1
+      );
+
+      pages.push(
+        total
+      );
+
+      return pages;
+    }
+
+
+    // ----------------------------------------------------------
+    // Middle
+    // ----------------------------------------------------------
+
+    pages.push("...");
+
+    pages.push(
+      current - 1
+    );
+
+    pages.push(
+      current
+    );
+
+    pages.push(
+      current + 1
+    );
+
+    pages.push("...");
+
+    pages.push(total);
+
+
+    return pages;
+  }
+
+
+  // ============================================================
+  // PAGINATION BUTTON
+  // ============================================================
+
+  function createPageButton(
+    label,
+    enabled,
+    onClick
+  ) {
+
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.type =
+      "button";
+
+    button.textContent =
+      label;
+
+    button.style.cssText = `
+      min-width:36px;
+      height:36px;
+      padding:0 10px;
+      border:1px solid #302e35;
+      border-radius:7px;
+      background:#111014;
+      color:#aaa7b0;
+      cursor:pointer;
+      font-size:12px;
+      transition:
+        background .15s ease,
+        color .15s ease,
+        border-color .15s ease;
+    `;
+
+
+    if (!enabled) {
+
+      button.disabled =
+        true;
+
+      button.style.opacity =
+        "0.35";
+
+      button.style.cursor =
+        "default";
+
+    } else {
+
+      button.addEventListener(
+        "mouseenter",
+        () => {
+
+          if (
+            !button.disabled
+          ) {
+
+            button.style.borderColor =
+              "#d4af67";
+
+            button.style.color =
+              "#d4af67";
+          }
+        }
+      );
+
+
+      button.addEventListener(
+        "mouseleave",
+        () => {
+
+          if (
+            !button.disabled
+          ) {
+
+            button.style.borderColor =
+              "#302e35";
+
+            button.style.color =
+              "#aaa7b0";
+          }
+        }
+      );
+
+
+      button.addEventListener(
+        "click",
+        onClick
+      );
+    }
+
+
+    return button;
+  }
+
+
+  // ============================================================
+  // SCROLL BACK TO RESULTS
+  // ============================================================
+
+  function scrollResultsToTop() {
+
+    if (!results) {
+      return;
+    }
+
+
+    const top =
+      results.getBoundingClientRect()
+        .top +
+      window.scrollY -
+      100;
+
+
+    window.scrollTo({
+      top,
+      behavior: "smooth"
+    });
   }
 
 
